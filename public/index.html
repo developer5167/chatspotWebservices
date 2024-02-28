@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+    
+<title>chatspot</title>
+<h1></h1>
+
+<body>Welcome
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Connect to the Socket.IO server
+        const socket = io('http://127.0.0.1:5001/chatspotmain/us-central1/app');
+      
+        // Handle connection event
+        socket.on('connect', () => {
+          console.log('Connected to server');
+        });
+      
+        // Handle custom events from the server
+        socket.on('custom-event', (data) => {
+          console.log('Received data:', data);
+        });
+      
+        // Handle disconnection event
+        socket.on('disconnect', () => {
+          console.log('Disconnected from server');
+        });
+      </script>
+      </body>
+
+</html>
