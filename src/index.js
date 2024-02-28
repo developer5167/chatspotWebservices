@@ -9,7 +9,6 @@ myHashMap.clear()
 
 let dataValues = []
 let keys = []
-let values = []
 let waitingUser = null;
 let waitinUserData = null;
 io.on('connection', (socket) => {
