@@ -11,6 +11,10 @@ let dataValues = []
 let keys = []
 let waitingUser = null;
 let waitinUserData = null;
+
+app.get("/",(req,res)=>{
+  res.send("Welcome")
+})
 io.on('connection', (socket) => {
   console.log('A user connected');
   socket.on("readyToPair", (data) => {
