@@ -1,0 +1,8 @@
+{
+    "appService.defaultWebAppToDeploy": "/subscriptions/54d42af9-22c4-4648-bed1-08caaa16c2ff/resourceGroups/appsvc_linux_centralus/providers/Microsoft.Web/sites/chatSpotBackEndNodejs",
+    "appService.deploySubpath": ".",
+    "appService.zipIgnorePattern": [
+        "node_modules{,/**}",
+        ".vscode{,/**}"
+    ]
+}
