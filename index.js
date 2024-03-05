@@ -44,6 +44,8 @@ io.on('connection', (socket) => {
         } else {
           socket.emit('waiting', 'Waiting for another ' + gender + ' user to join...');
         }
+      }else {
+        socket.emit('waiting', 'Waiting for another ' + gender + ' user to join...');
       }
     } else {
       const parsedData = JSON.parse(data)
