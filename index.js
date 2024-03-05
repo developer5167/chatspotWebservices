@@ -20,9 +20,12 @@ io.on('connection', (socket) => {
   socket.on("readyToPair", (data) => {
 
     if (waitingUser) {
-      if (waitingUser != socket) {
-        const parsedData = JSON.parse(data)
-        const gender = parsedData["interestedIn"];
+      const parsedData = JSON.parse(data)
+      const gender = parsedData["interestedIn"];
+      const parsedWaitingUserData = JSON.parse(waitinUserData)
+      const waitingUserId = parsedWaitingUserData["id"];
+      const currentUserId = parsedData["id"];
+      if (waitingUserId != currentUserId) {
         if (interestedIn == "auto") {
           // If there is a waiting user, pair the current user with it
           console.log("SECOND USER" + data + "SOCKET ID >>>" + socket.id + " >>>   " + waitingUser.id + "    >>>>" + waitinUserData)
@@ -44,13 +47,12 @@ io.on('connection', (socket) => {
         } else {
           socket.emit('waiting', 'Waiting for another ' + gender + ' user to join...');
         }
-      }else {
-        socket.emit('waiting', 'Waiting for another ' + gender + ' user to join...');
+      } else {
+        waitingUser.emit('waiting', 'Waiting for ' + gender + ' user to join...');
       }
     } else {
       const parsedData = JSON.parse(data)
       interestedIn = parsedData["interestedIn"];
-      // If no waiting user, set current user as waiting
       console.log("FIRST USER" + data + "     SOCKET ID >>>" + socket.id)
       waitingUser = socket;
       waitinUserData = data
@@ -81,7 +83,10 @@ io.on('connection', (socket) => {
 });
 const PORT = process.env.PORT || 2000;
 
-server.listen(PORT, () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log('server running on' + PORT)
+  waitingUser = null;
+  interestedIn = "auto";
+  waitinUserData = null;
 })
 
