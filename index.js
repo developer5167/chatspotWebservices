@@ -18,29 +18,32 @@ app.get("/", (req, res) => {
 io.on('connection', (socket) => {
   console.log('A user connected');
   socket.on("readyToPair", (data) => {
+
     if (waitingUser) {
-      const parsedData = JSON.parse(data)
-      const gender = parsedData["interestedIn"];
-      if (interestedIn == "auto") {
-        // If there is a waiting user, pair the current user with it
-        console.log("SECOND USER" + data + "SOCKET ID >>>" + socket.id + " >>>   " + waitingUser.id + "    >>>>" + waitinUserData)
-        socket.emit('pair', waitinUserData);
-        waitingUser.emit('pair', data);
-        console.log('pair Completed');
-        waitingUser = null; // Reset waiting user
-        waitinUserData = null;
-        interestedIn = "auto"
-      } else if (interestedIn == gender) {
-        // If there is a waiting user, pair the current user with it
-        console.log("SECOND USER" + data + "SOCKET ID >>>" + socket.id + " >>>   " + waitingUser.id + "    >>>>" + waitinUserData)
-        socket.emit('pair', waitinUserData);
-        waitingUser.emit('pair', data);
-        console.log('pair Completed');
-        waitingUser = null; // Reset waiting user
-        waitinUserData = null;
-        interestedIn = "auto"
-      } else {
-        socket.emit('waiting', 'Waiting for another ' + gender + ' user to join...');
+      if (waitingUser != socket) {
+        const parsedData = JSON.parse(data)
+        const gender = parsedData["interestedIn"];
+        if (interestedIn == "auto") {
+          // If there is a waiting user, pair the current user with it
+          console.log("SECOND USER" + data + "SOCKET ID >>>" + socket.id + " >>>   " + waitingUser.id + "    >>>>" + waitinUserData)
+          socket.emit('pair', waitinUserData);
+          waitingUser.emit('pair', data);
+          console.log('pair Completed');
+          waitingUser = null; // Reset waiting user
+          waitinUserData = null;
+          interestedIn = "auto"
+        } else if (interestedIn == gender) {
+          // If there is a waiting user, pair the current user with it
+          console.log("SECOND USER" + data + "SOCKET ID >>>" + socket.id + " >>>   " + waitingUser.id + "    >>>>" + waitinUserData)
+          socket.emit('pair', waitinUserData);
+          waitingUser.emit('pair', data);
+          console.log('pair Completed');
+          waitingUser = null; // Reset waiting user
+          waitinUserData = null;
+          interestedIn = "auto"
+        } else {
+          socket.emit('waiting', 'Waiting for another ' + gender + ' user to join...');
+        }
       }
     } else {
       const parsedData = JSON.parse(data)
