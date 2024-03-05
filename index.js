@@ -9,7 +9,7 @@ myHashMap.clear()
 
 let keys = []
 let waitingUser = null;
-let interestedIn = auto;
+let interestedIn = "auto";
 let waitinUserData = null;
 
 app.get("/", (req, res) => {
