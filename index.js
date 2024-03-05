@@ -18,7 +18,6 @@ app.get("/", (req, res) => {
 io.on('connection', (socket) => {
   console.log('A user connected');
   socket.on("readyToPair", (data) => {
-
     if (waitingUser) {
       const parsedData = JSON.parse(data)
       const gender = parsedData["interestedIn"];
