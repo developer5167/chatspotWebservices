@@ -155,6 +155,25 @@ io.on("connection", (socket) => {
     console.log(`[WAITING] User ${id} added to the waiting queue.`);
     socket.emit("waiting", "Waiting for a compatible user...");
   });
+
+  socket.on("changePreference", (data) => {
+    const parsedData = JSON.parse(data);
+    const { id, newInterestedIn } = parsedData;
+
+    console.log(`[INFO] User ${id} is updating preference to ${newInterestedIn}.`);
+
+    // Remove user from the waiting queue if they exist
+    if (waitingUsers.has(id)) {
+        waitingUsers.delete(id);
+        console.log(`[UPDATE] User ${id} removed from waiting queue.`);
+    }
+
+    // Emit event to notify the user they need to rejoin
+    socket.emit("preferenceUpdated", "No user found! change your pref and try rejoin");
+
+    console.log(`[INFO] User ${id} must now rejoin with new preference.`);
+});
+
   socket.on("join", (data) => {
     const parsedData = JSON.parse(data);
     const chatId = parsedData["chatId"];
@@ -169,12 +188,7 @@ io.on("connection", (socket) => {
     const chatId = parsedData["chatId"];
     io.to(chatId).emit("message", data.toString());
   });
-  socket.on("timeup", (data) => {
-    waitingUser = null;
-    interestedIn = "Auto";
-    waitinUserData = null;
-  });
-
+ 
   socket.on("typing", (data) => {
     const parsedData = JSON.parse(data);
     const chatId = parsedData["chatId"];
