@@ -1,4 +1,0 @@
-// const db = require("./config") 
-const db = require("./localDb")  
-const readyToPairUsers = db.collection("readyToPairUsers");
-module.exports = readyToPairUsers;

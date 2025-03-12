@@ -1,14 +1,11 @@
 const http = require("http");
 const express = require("express");
 const cors = require("cors");
-
 const { Server } = require("socket.io");
 const app = express();
 app.use(cors());
 
 const server = http.createServer(app);
-// const io = socket(server);
-
 const io = new Server(server, {
   cors: {
     origin: "*", // Allowed client origin(s)
@@ -18,13 +15,8 @@ const io = new Server(server, {
     credentials: false, // Allow credentials if needed
   },
 });
-// let myHashMap = new Map();
-// myHashMap.clear();
-
-// let waitingUser = null;
-// let interestedIn = "";
-// let waitingUserData = null;
 const waitingUsers = new Map();
+const timers = new Map();
 app.get("/", (req, res) => {
   res.send("Welcome");
 });
@@ -145,6 +137,9 @@ io.on("connection", (socket) => {
         console.log(`[MATCH] ${id} paired with ${waitingUser.id}`);
 
         // Remove matched user from the queue
+        clearTimeout(timers.get(waitingId));
+        timers.delete(waitingId);
+        waitingUsers.delete(waitingId);
         waitingUsers.delete(waitingId);
         return;
       }
@@ -154,6 +149,16 @@ io.on("connection", (socket) => {
     waitingUsers.set(id, { id, gender, interestedIn, socketId: socket.id });
     console.log(`[WAITING] User ${id} added to the waiting queue.`);
     socket.emit("waiting", "Waiting for a compatible user...");
+    const countdown = setTimeout(() => {
+      if (waitingUsers.has(id)) {
+          waitingUsers.delete(id);
+          timers.delete(id);
+          socket.emit("timeout", "No user found! change your pref and try rejoin");
+          console.log(`[TIMEOUT] User ${id} removed from the queue.`);
+      }
+  }, 30000); // 30 seconds
+
+  timers.set(id, countdown);
   });
 
   socket.on("changePreference", (data) => {
@@ -198,7 +203,6 @@ io.on("connection", (socket) => {
   socket.on("typingOff", (data) => {
     const parsedData = JSON.parse(data);
     const chatId = parsedData["chatId"];
-
     io.to(chatId).emit("typingMessageOff", data.toString());
   });
   socket.on("leftChatRoom", (data) => {
@@ -227,10 +231,6 @@ function isCompatibleMatch(gender1, interest1, gender2, interest2) {
 }
 
 const PORT = process.env.PORT || 2000;
-
-server.listen(PORT, "0.0.0.0", () => {
+server.listen(PORT, () => {
   console.log("server running on" + PORT);
-  // waitingUser = null;
-  // interestedIn = "auto";
-  // waitinUserData = null;
 });
