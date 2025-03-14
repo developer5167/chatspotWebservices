@@ -17,10 +17,12 @@ const io = new Server(server, {
 });
 const waitingUsers = new Map();
 const timers = new Map();
+const activeUsers = new Set();
 app.get("/", (req, res) => {
   res.send("Welcome");
 });
 io.on("connection", (socket) => {
+  io.emit('')
   console.log("A user connected");
   // socket.on('readyToPair', (data) => {
   //   console.log("IDS  " +  waitingUser);
@@ -116,6 +118,8 @@ io.on("connection", (socket) => {
     const { id, gender, interestedIn } = parsedData;
     console.log(`[INFO] User ${id} is ready to pair.`);
     // Check if user is already in the queue
+    activeUsers.add(id); // Mark user as active
+    broadcastUserCount();
     if (waitingUsers.has(id)) {
       socket.emit("waiting", "You are already in the queue...");
       return;
@@ -140,7 +144,7 @@ io.on("connection", (socket) => {
         clearTimeout(timers.get(waitingId));
         timers.delete(waitingId);
         waitingUsers.delete(waitingId);
-        waitingUsers.delete(waitingId);
+        broadcastUserCount(); 
         return;
       }
     }
@@ -155,10 +159,12 @@ io.on("connection", (socket) => {
           timers.delete(id);
           socket.emit("timeout", "No user found! change your pref and try rejoin");
           console.log(`[TIMEOUT] User ${id} removed from the queue.`);
+          broadcastUserCount(); 
       }
   }, 30000); // 30 seconds
 
   timers.set(id, countdown);
+  broadcastUserCount();
   });
 
   socket.on("changePreference", (data) => {
@@ -217,12 +223,26 @@ io.on("connection", (socket) => {
       if (user.socket === socket) {
         waitingUsers.delete(id);
         console.log(`[DISCONNECT] User ${id} removed from queue.`);
+        broadcastUserCount();
         break;
       }
     }
+    if (activeUsers.size === 0) {
+      notifyPreviousUsers("A new user joined! Open the app to chat.");
+  }
   });
 });
 
+function broadcastUserCount() {
+  const totalUsers = activeUsers.size;
+  const waitingUsersCount = waitingUsers.size;
+  console.log(`[UPDATE] Active Users: ${totalUsers}, Waiting Users: ${waitingUsersCount}`);
+  io.emit("updateUserCount", { totalUsers, waitingUsers: waitingUsersCount });
+}
+function notifyPreviousUsers(message) {
+  // Use Firebase Cloud Messaging (FCM) or another push notification service
+  sendPushNotificationToAll(message);
+}
 function isCompatibleMatch(gender1, interest1, gender2, interest2) {
   if (interest1 === "Auto" || interest2 === "Auto") {
     return true; // Auto means they accept any gender
