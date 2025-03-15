@@ -22,7 +22,7 @@ app.get("/", (req, res) => {
   res.send("Welcome");
 });
 io.on("connection", (socket) => {
-  io.emit('')
+  io.emit("");
   console.log("A user connected");
   // socket.on('readyToPair', (data) => {
   //   console.log("IDS  " +  waitingUser);
@@ -119,7 +119,7 @@ io.on("connection", (socket) => {
     console.log(`[INFO] User ${id} is ready to pair.`);
     // Check if user is already in the queue
     activeUsers.add(id); // Mark user as active
-    broadcastUserCount();
+    // broadcastUserCount();
     if (waitingUsers.has(id)) {
       socket.emit("waiting", "You are already in the queue...");
       return;
@@ -136,15 +136,21 @@ io.on("connection", (socket) => {
         )
       ) {
         // Pair the users
-        io.to(waitingUser.socketId).emit("pair", JSON.stringify({ id, gender }));
-        io.to(socket.id).emit("pair", JSON.stringify({ id: waitingUser.id, gender: waitingUser.gender }));
+        io.to(waitingUser.socketId).emit(
+          "pair",
+          JSON.stringify({ id, gender })
+        );
+        io.to(socket.id).emit(
+          "pair",
+          JSON.stringify({ id: waitingUser.id, gender: waitingUser.gender })
+        );
         console.log(`[MATCH] ${id} paired with ${waitingUser.id}`);
 
         // Remove matched user from the queue
         clearTimeout(timers.get(waitingId));
         timers.delete(waitingId);
         waitingUsers.delete(waitingId);
-        broadcastUserCount(); 
+        // broadcastUserCount();
         return;
       }
     }
@@ -155,35 +161,43 @@ io.on("connection", (socket) => {
     socket.emit("waiting", "Waiting for a compatible user...");
     const countdown = setTimeout(() => {
       if (waitingUsers.has(id)) {
-          waitingUsers.delete(id);
-          timers.delete(id);
-          socket.emit("timeout", "No user found! change your pref and try rejoin");
-          console.log(`[TIMEOUT] User ${id} removed from the queue.`);
-          broadcastUserCount(); 
+        waitingUsers.delete(id);
+        timers.delete(id);
+        socket.emit(
+          "timeout",
+          "No user found! change your pref and try rejoin"
+        );
+        console.log(`[TIMEOUT] User ${id} removed from the queue.`);
+        // broadcastUserCount();
       }
-  }, 30000); // 30 seconds
+    }, 30000); // 30 seconds
 
-  timers.set(id, countdown);
-  broadcastUserCount();
+    timers.set(id, countdown);
+    // broadcastUserCount();
   });
 
   socket.on("changePreference", (data) => {
     const parsedData = JSON.parse(data);
     const { id, newInterestedIn } = parsedData;
 
-    console.log(`[INFO] User ${id} is updating preference to ${newInterestedIn}.`);
+    console.log(
+      `[INFO] User ${id} is updating preference to ${newInterestedIn}.`
+    );
 
     // Remove user from the waiting queue if they exist
     if (waitingUsers.has(id)) {
-        waitingUsers.delete(id);
-        console.log(`[UPDATE] User ${id} removed from waiting queue.`);
+      waitingUsers.delete(id);
+      console.log(`[UPDATE] User ${id} removed from waiting queue.`);
     }
 
     // Emit event to notify the user they need to rejoin
-    socket.emit("preferenceUpdated", "No user found! change your pref and try rejoin");
+    socket.emit(
+      "preferenceUpdated",
+      "No user found! change your pref and try rejoin"
+    );
 
     console.log(`[INFO] User ${id} must now rejoin with new preference.`);
-});
+  });
 
   socket.on("join", (data) => {
     const parsedData = JSON.parse(data);
@@ -199,7 +213,34 @@ io.on("connection", (socket) => {
     const chatId = parsedData["chatId"];
     io.to(chatId).emit("message", data.toString());
   });
- 
+  socket.on("offer", (data) => {
+    const parsedData = JSON.parse(data);
+    const chatId = parsedData["chatId"];
+    io.to(chatId).emit("offer", {
+      sdp: data.sdp,
+      type: data.type,
+      sender: socket.id,
+    });
+  });
+  socket.on("answer", (data) => {
+    const parsedData = JSON.parse(data);
+    const chatId = parsedData["chatId"];
+    io.to(chatId).emit("answer", {
+      sdp: data.sdp,
+      type: data.type,
+      sender: socket.id
+    });
+  });
+  socket.on("candidate", (data) => {
+    const parsedData = JSON.parse(data);
+    const chatId = parsedData["chatId"];
+    io.to(chatId).emit("candidate", {
+      candidate: data.candidate,
+      sdpMid: data.sdpMid,
+      sdpMLineIndex: data.sdpMLineIndex,
+      sender: socket.id
+    });
+  });
   socket.on("typing", (data) => {
     const parsedData = JSON.parse(data);
     const chatId = parsedData["chatId"];
@@ -223,25 +264,27 @@ io.on("connection", (socket) => {
       if (user.socket === socket) {
         waitingUsers.delete(id);
         console.log(`[DISCONNECT] User ${id} removed from queue.`);
-        broadcastUserCount();
+        // broadcastUserCount();
         break;
       }
     }
     if (activeUsers.size === 0) {
       notifyPreviousUsers("A new user joined! Open the app to chat.");
-  }
+    }
   });
 });
 
 function broadcastUserCount() {
   const totalUsers = activeUsers.size;
   const waitingUsersCount = waitingUsers.size;
-  console.log(`[UPDATE] Active Users: ${totalUsers}, Waiting Users: ${waitingUsersCount}`);
+  console.log(
+    `[UPDATE] Active Users: ${totalUsers}, Waiting Users: ${waitingUsersCount}`
+  );
   io.emit("updateUserCount", { totalUsers, waitingUsers: waitingUsersCount });
 }
 function notifyPreviousUsers(message) {
   // Use Firebase Cloud Messaging (FCM) or another push notification service
-  sendPushNotificationToAll(message);
+  // sendPushNotificationToAll(message);
 }
 function isCompatibleMatch(gender1, interest1, gender2, interest2) {
   if (interest1 === "Auto" || interest2 === "Auto") {
