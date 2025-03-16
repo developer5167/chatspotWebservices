@@ -241,6 +241,29 @@ io.on("connection", (socket) => {
       sender: socket.id
     });
   });
+  socket.on("call_user", (data) => {
+    const parsedData = JSON.parse(data);
+    const chatId = parsedData["chatId"];
+    io.to(chatId).emit("incoming_call", data.toString());
+  });
+
+  // When User B accepts the call
+  socket.on("accept_call", (data) => {
+    const parsedData = JSON.parse(data);
+    const chatId = parsedData["chatId"];    
+    io.to(chatId).emit("call_accepted", data.toString());
+  });
+  // When User B rejects the call
+  socket.on("reject_call", (data) => {
+    const parsedData = JSON.parse(data);
+    const chatId = parsedData["chatId"];
+    io.to(chatId).emit("call_rejected",data.toString());
+  });
+  socket.on("hang_up", (data) => {
+    const parsedData = JSON.parse(data);
+    const chatId = parsedData["chatId"];
+    io.to(chatId).emit("call_ended");
+});
   socket.on("typing", (data) => {
     const parsedData = JSON.parse(data);
     const chatId = parsedData["chatId"];
