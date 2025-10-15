@@ -3,129 +3,62 @@ const express = require("express");
 const cors = require("cors");
 const { Server } = require("socket.io");
 const app = express();
+const admin = require("firebase-admin");
+const serviceAccount = require("./path/to/your-firebase-service-account.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 app.use(cors());
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*", // Allowed client origin(s)
-    methods: ["GET", "POST"], // Allowed HTTP methods
+    origin: "*",
+    methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"],
-    preflightContinue: false, // Allow necessary headers
-    credentials: false, // Allow credentials if needed
+    preflightContinue: false,
+    credentials: false,
   },
 });
 const waitingUsers = new Map();
 const timers = new Map();
 const activeUsers = new Set();
+const deviceTokens = new Set(); // Add this at the top, after your other variables
+
+
 app.get("/", (req, res) => {
   res.send("Welcome");
+});
+app.post('/register-token', express.json(), (req, res) => {
+  const { token } = req.body;
+  if (token) {
+  deviceTokens.add(token);
+  console.log("Registered device token:", token);
+}
+  res.status(200).send({ success: true });
 });
 io.on("connection", (socket) => {
   io.emit("");
   console.log("A user connected");
-  // socket.on('readyToPair', (data) => {
-  //   console.log("IDS  " +  waitingUser);
-  //   if (waitingUser) {
-  //     const parsedData = JSON.parse(data);
-  //     interestedIn = parsedData["interestedIn"];
-  //     const parsedWaitingUserData = JSON.parse(waitinUserData);
-  //     const waitingUserId = parsedWaitingUserData["id"];
-  //     const currentUserId = parsedData["id"];
-  //     if (waitingUserId != currentUserId) {
-  //       if (interestedIn == "Auto") {
-  //         // If there is a waiting user, pair the current user with it
-  //         socket.emit('pair', waitinUserData);
-  //         waitingUser.emit('pair', data);
-  //         console.log("pair Completed");
-  //         waitingUser = null; // Reset waiting user
-  //         waitinUserData = null;
-  //       } else if (interestedIn == "Male") {
-  //         // If there is a waiting user, pair the current user with it
-  //         socket.emit('pair', waitinUserData);
-  //         waitingUser.emit('pair', data);
-  //         console.log("pair Completed");
-  //         waitingUser = null; // Reset waiting user
-  //         waitinUserData = null;
-  //       } else if (interestedIn == "Female") {
-  //         // If there is a waiting user, pair the current user with it
-  //         socket.emit('pair', waitinUserData);
-  //         waitingUser.emit('pair', data);
-  //         console.log("pair Completed");
-  //         waitingUser = null; // Reset waiting user
-  //         waitinUserData = null;
-  //       } else {
-  //         socket.emit(
-  //           'waiting',
-  //           "Waiting for another " + gender + " user to join..."
-  //         );
-  //       }
-  //     } else {
-  //       waitingUser.emit(
-  //         'waiting',
-  //         "Waiting for " + gender + " user to join..."
-  //       );
-  //     }
-  //   } else {
-  //     const parsedData = JSON.parse(data);
-  //     interestedIn = parsedData["interestedIn"];
-  //     console.log("FIRST USER" + data + "     SOCKET ID >>>" + socket.id);
-  //     waitingUser = socket;
-  //     waitinUserData = data;
-  //     socket.emit('waiting', "Waiting for another user to join...");
-  //     console.log(">>>>"+waitingUser)
-  //   }
-  // });
-
-  //   socket.on('readyToPair', (data) => {
-  //     console.log("Waiting User: ", waitingUser);
-
-  //     const parsedData = JSON.parse(data);
-  //     const currentUserId = parsedData["id"];
-  //     const currentGender = parsedData["gender"]; // e.g., "Male", "Female"
-  //     const interestedIn = parsedData["interestedIn"]; // e.g., "Male", "Female", "Auto"
-
-  //     if (waitingUser) {
-  //         const parsedWaitingUserData = JSON.parse(waitingUserData);
-  //         const waitingUserId = parsedWaitingUserData["id"];
-  //         const waitingUserGender = parsedWaitingUserData["gender"];
-  //         const waitingUserInterest = parsedWaitingUserData["interestedIn"];
-
-  //         // Check if the two users match based on gender preferences
-  //         if (waitingUserId !== currentUserId && isCompatibleMatch(currentGender, interestedIn, waitingUserGender, waitingUserInterest)) {
-  //             // Pair users
-  //             socket.emit('pair', waitingUserData);
-  //             waitingUser.emit('pair', data);
-  //             console.log("Pairing Completed");
-
-  //             // Reset waiting user
-  //             waitingUser = null;
-  //             waitingUserData = null;
-  //         } else {
-  //             socket.emit('waiting', "Waiting for a compatible user...");
-  //         }
-  //     } else {
-  //         // First user joins, store their data
-  //         waitingUser = socket;
-  //         waitingUserData = data;
-  //         console.log("First user joined: " + data + " | Socket ID: " + socket.id);
-  //         socket.emit('waiting', "Waiting for another user to join...");
-  //     }
-  // });
 
   socket.on("readyToPair", (data) => {
-    const parsedData = JSON.parse(data);
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
     const { id, gender, interestedIn } = parsedData;
     console.log(`[INFO] User ${id} is ready to pair.`);
-    // Check if user is already in the queue
-    activeUsers.add(id); // Mark user as active
-    // broadcastUserCount();
+    activeUsers.add(id);
+
     if (waitingUsers.has(id)) {
       socket.emit("waiting", "You are already in the queue...");
       return;
     }
 
-    // Attempt to find a suitable match
     for (const [waitingId, waitingUser] of waitingUsers) {
       if (
         isCompatibleMatch(
@@ -135,7 +68,6 @@ io.on("connection", (socket) => {
           waitingUser.interestedIn
         )
       ) {
-        // Pair the users
         io.to(waitingUser.socketId).emit(
           "pair",
           JSON.stringify({ id, gender })
@@ -146,16 +78,18 @@ io.on("connection", (socket) => {
         );
         console.log(`[MATCH] ${id} paired with ${waitingUser.id}`);
 
-        // Remove matched user from the queue
-        clearTimeout(timers.get(waitingId));
-        timers.delete(waitingId);
+        if (timers.has(waitingId)) {
+          clearTimeout(timers.get(waitingId));
+          timers.delete(waitingId);
+        }
         waitingUsers.delete(waitingId);
-        // broadcastUserCount();
+        activeUsers.delete(waitingUser.id);
+        activeUsers.delete(id);
+        broadcastUserCount();
         return;
       }
     }
 
-    // If no match found, add current user to the waiting list
     waitingUsers.set(id, { id, gender, interestedIn, socketId: socket.id });
     console.log(`[WAITING] User ${id} added to the waiting queue.`);
     socket.emit("waiting", "Waiting for a compatible user...");
@@ -163,34 +97,45 @@ io.on("connection", (socket) => {
       if (waitingUsers.has(id)) {
         waitingUsers.delete(id);
         timers.delete(id);
+        activeUsers.delete(id);
         socket.emit(
           "timeout",
           "No user found! change your pref and try rejoin"
         );
         console.log(`[TIMEOUT] User ${id} removed from the queue.`);
-        // broadcastUserCount();
+        broadcastUserCount();
       }
-    }, 30000); // 30 seconds
+    }, 30000);
 
     timers.set(id, countdown);
-    // broadcastUserCount();
+    broadcastUserCount();
   });
 
   socket.on("changePreference", (data) => {
-    const parsedData = JSON.parse(data);
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
     const { id, newInterestedIn } = parsedData;
 
     console.log(
       `[INFO] User ${id} is updating preference to ${newInterestedIn}.`
     );
 
-    // Remove user from the waiting queue if they exist
     if (waitingUsers.has(id)) {
       waitingUsers.delete(id);
+      if (timers.has(id)) {
+        clearTimeout(timers.get(id));
+        timers.delete(id);
+      }
+      activeUsers.delete(id);
       console.log(`[UPDATE] User ${id} removed from waiting queue.`);
+      broadcastUserCount();
     }
 
-    // Emit event to notify the user they need to rejoin
     socket.emit(
       "preferenceUpdated",
       "No user found! change your pref and try rejoin"
@@ -200,7 +145,13 @@ io.on("connection", (socket) => {
   });
 
   socket.on("join", (data) => {
-    const parsedData = JSON.parse(data);
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
     const chatId = parsedData["chatId"];
     socket.join(chatId);
     console.log("ROOM >>> " + chatId);
@@ -208,88 +159,171 @@ io.on("connection", (socket) => {
       .to(chatId)
       .emit("welcomeNote", "A random user joined the chat");
   });
+
   socket.on("sendMessage", (data) => {
-    const parsedData = JSON.parse(data);
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
     const chatId = parsedData["chatId"];
     io.to(chatId).emit("message", data.toString());
   });
+
   socket.on("offer", (data) => {
-    const parsedData = JSON.parse(data);
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
     const chatId = parsedData["chatId"];
     io.to(chatId).emit("offer", {
-      sdp: data.sdp,
-      type: data.type,
+      sdp: parsedData.sdp,
+      type: parsedData.type,
       sender: socket.id,
     });
   });
+
   socket.on("answer", (data) => {
-    const parsedData = JSON.parse(data);
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
     const chatId = parsedData["chatId"];
     io.to(chatId).emit("answer", {
-      sdp: data.sdp,
-      type: data.type,
-      sender: socket.id
+      sdp: parsedData.sdp,
+      type: parsedData.type,
+      sender: socket.id,
     });
   });
+
   socket.on("candidate", (data) => {
-    const parsedData = JSON.parse(data);
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
     const chatId = parsedData["chatId"];
     io.to(chatId).emit("candidate", {
-      candidate: data.candidate,
-      sdpMid: data.sdpMid,
-      sdpMLineIndex: data.sdpMLineIndex,
-      sender: socket.id
+      candidate: parsedData.candidate,
+      sdpMid: parsedData.sdpMid,
+      sdpMLineIndex: parsedData.sdpMLineIndex,
+      sender: socket.id,
     });
   });
+
   socket.on("call_user", (data) => {
-    const parsedData = JSON.parse(data);
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
     const chatId = parsedData["chatId"];
     io.to(chatId).emit("incoming_call", data.toString());
   });
 
-  // When User B accepts the call
   socket.on("accept_call", (data) => {
-    const parsedData = JSON.parse(data);
-    const chatId = parsedData["chatId"];    
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
+    const chatId = parsedData["chatId"];
     io.to(chatId).emit("call_accepted", data.toString());
   });
-  // When User B rejects the call
+
   socket.on("reject_call", (data) => {
-    const parsedData = JSON.parse(data);
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
     const chatId = parsedData["chatId"];
-    io.to(chatId).emit("call_rejected",data.toString());
+    io.to(chatId).emit("call_rejected", data.toString());
   });
+
   socket.on("hang_up", (data) => {
-    const parsedData = JSON.parse(data);
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
     const chatId = parsedData["chatId"];
     io.to(chatId).emit("call_ended");
-});
-  socket.on("typing", (data) => {
-    const parsedData = JSON.parse(data);
-    const chatId = parsedData["chatId"];
+  });
 
+  socket.on("typing", (data) => {
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
+    const chatId = parsedData["chatId"];
     io.to(chatId).emit("typingMessage", data.toString());
   });
+
   socket.on("typingOff", (data) => {
-    const parsedData = JSON.parse(data);
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
     const chatId = parsedData["chatId"];
     io.to(chatId).emit("typingMessageOff", data.toString());
   });
+
   socket.on("leftChatRoom", (data) => {
-    const parsedData = JSON.parse(data);
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
     const chatId = parsedData["chatId"];
     io.to(chatId).emit("leftChatRoomMessage", "User left the chat");
   });
 
   socket.on("disconnect", () => {
     console.log("A user disconnected");
+    let removedId = null;
     for (const [id, user] of waitingUsers) {
-      if (user.socket === socket) {
+      if (user.socketId === socket.id) {
         waitingUsers.delete(id);
+        if (timers.has(id)) {
+          clearTimeout(timers.get(id));
+          timers.delete(id);
+        }
+        activeUsers.delete(id);
+        removedId = id;
         console.log(`[DISCONNECT] User ${id} removed from queue.`);
-        // broadcastUserCount();
+        broadcastUserCount();
         break;
       }
+    }
+    if (removedId) {
+      activeUsers.delete(removedId);
     }
     if (activeUsers.size === 0) {
       notifyPreviousUsers("A new user joined! Open the app to chat.");
@@ -305,18 +339,43 @@ function broadcastUserCount() {
   );
   io.emit("updateUserCount", { totalUsers, waitingUsers: waitingUsersCount });
 }
+
 function notifyPreviousUsers(message) {
-  // Use Firebase Cloud Messaging (FCM) or another push notification service
-  // sendPushNotificationToAll(message);
+  if (deviceTokens.size === 0) return;
+
+  const payload = {
+    notification: {
+      title: "Pair",
+      body: message,
+    },
+  };
+
+  admin.messaging().sendToDevice(Array.from(deviceTokens), payload)
+    .then((response) => {
+      response.results.forEach((result, index) => {
+      const error = result.error;
+      if (error) {
+        // Remove invalid token
+        const tokensArray = Array.from(deviceTokens);
+        deviceTokens.delete(tokensArray[index]);
+        console.log("Removed invalid token:", tokensArray[index]);
+      }
+      console.log("Successfully sent notifications:", response);
+    });
+    })
+    .catch((error) => {
+      console.error("Error sending notifications:", error);
+    });
 }
+
 function isCompatibleMatch(gender1, interest1, gender2, interest2) {
   if (interest1 === "Auto" || interest2 === "Auto") {
-    return true; // Auto means they accept any gender
+    return true;
   }
-  return interest1 === gender2 && interest2 === gender1; // Ensure mutual preference
+  return interest1 === gender2 && interest2 === gender1;
 }
 
 const PORT = process.env.PORT || 2000;
 server.listen(PORT, () => {
-  console.log("server running on" + PORT);
+  console.log("server running on " + PORT);
 });
