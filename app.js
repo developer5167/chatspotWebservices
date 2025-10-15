@@ -376,6 +376,6 @@ function isCompatibleMatch(gender1, interest1, gender2, interest2) {
 }
 
 const PORT = process.env.PORT || 2000;
-server.listen(PORT, () => {
+server.listen(PORT,"0.0.0.0", () => {
   console.log("server running on " + PORT);
 });
