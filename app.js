@@ -4,7 +4,7 @@ const cors = require("cors");
 const { Server } = require("socket.io");
 const app = express();
 const admin = require("firebase-admin");
-const serviceAccount = require("./path/to/your-firebase-service-account.json");
+const serviceAccount = require("./serviceAccountKey.json");
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
