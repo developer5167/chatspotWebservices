@@ -4,7 +4,9 @@ const cors = require("cors");
 const { Server } = require("socket.io");
 const app = express();
 const admin = require("firebase-admin");
-const serviceAccount = require("./serviceAccountKey.json");
+// const serviceAccount = require("./serviceAccountKey.json");
+const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
+
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -98,12 +100,12 @@ io.on("connection", (socket) => {
         waitingUsers.delete(id);
         timers.delete(id);
         activeUsers.delete(id);
+        broadcastUserCount();
         socket.emit(
           "timeout",
           "No user found! change your pref and try rejoin"
         );
         console.log(`[TIMEOUT] User ${id} removed from the queue.`);
-        broadcastUserCount();
       }
     }, 30000);
 
