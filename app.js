@@ -4,7 +4,12 @@ const cors = require("cors");
 const { Server } = require("socket.io");
 const app = express();
 const admin = require("firebase-admin");
+// or
+const { getMessaging } = require("firebase-admin/messaging"); // if using CommonJS
+
+// const serviceAccount = require("./serviceAccountKey.json");
 const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
+let lastNotifyTime = 0;
 
 
 admin.initializeApp({
@@ -44,6 +49,7 @@ io.on("connection", (socket) => {
   console.log("A user connected");
 
   socket.on("readyToPair", (data) => {
+    // notifyPreviousUsers()
     let parsedData;
     try {
       parsedData = typeof data === "string" ? JSON.parse(data) : data;
@@ -87,6 +93,7 @@ io.on("connection", (socket) => {
         activeUsers.delete(waitingUser.id);
         activeUsers.delete(id);
         broadcastUserCount();
+        
         return;
       }
     }
@@ -94,6 +101,9 @@ io.on("connection", (socket) => {
     waitingUsers.set(id, { id, gender, interestedIn, socketId: socket.id });
     console.log(`[WAITING] User ${id} added to the waiting queue.`);
     socket.emit("waiting", "Waiting for a compatible user...");
+if (waitingUsers.size === 1) {
+  maybeNotifyUsers();
+}
     const countdown = setTimeout(() => {
       if (waitingUsers.has(id)) {
         waitingUsers.delete(id);
@@ -344,6 +354,7 @@ function broadcastUserCount() {
 function notifyPreviousUsers(message) {
   if (deviceTokens.size === 0) return;
 
+  const tokens = Array.from(deviceTokens);
   const payload = {
     notification: {
       title: "Pair",
@@ -351,21 +362,20 @@ function notifyPreviousUsers(message) {
     },
   };
 
-  admin.messaging().sendToDevice(Array.from(deviceTokens), payload)
+  getMessaging()
+    .sendEachForMulticast({ tokens, ...payload })
     .then((response) => {
-      response.results.forEach((result, index) => {
-      const error = result.error;
-      if (error) {
-        // Remove invalid token
-        const tokensArray = Array.from(deviceTokens);
-        deviceTokens.delete(tokensArray[index]);
-        console.log("Removed invalid token:", tokensArray[index]);
-      }
-      console.log("Successfully sent notifications:", response);
-    });
+      response.responses.forEach((res, index) => {
+        if (!res.success) {
+          const invalidToken = tokens[index];
+          deviceTokens.delete(invalidToken);
+          console.log("Removed invalid token:", invalidToken);
+        }
+      });
+      console.log(`✅ Sent to ${response.successCount} users`);
     })
-    .catch((error) => {
-      console.error("Error sending notifications:", error);
+    .catch((err) => {
+      console.error("❌ Error sending notifications:", err);
     });
 }
 
@@ -375,7 +385,18 @@ function isCompatibleMatch(gender1, interest1, gender2, interest2) {
   }
   return interest1 === gender2 && interest2 === gender1;
 }
+function maybeNotifyUsers() {
+  const now = Date.now();
 
+  // Notify only if it's been 30 seconds since last notification
+  if (now - lastNotifyTime > 30000) {
+    notifyPreviousUsers("Someone is waiting to chat! Join now and start a conversation.");
+    lastNotifyTime = now;
+    console.log("🔔 Notification sent to previous users.");
+  } else {
+    console.log("⏳ Notification skipped (cooldown active).");
+  }
+}
 const PORT = process.env.PORT || 2000;
 server.listen(PORT,"0.0.0.0", () => {
   console.log("server running on " + PORT);
