@@ -192,10 +192,13 @@ if (waitingUsers.size === 1) {
       return;
     }
     const chatId = parsedData["chatId"];
+        console.log(`[INFO] User ${socket.id} is answering the call in chat ${chatId}.`);
+
+    
     io.to(chatId).emit("offer", {
       sdp: parsedData.sdp,
       type: parsedData.type,
-      sender: socket.id,
+      sender: parsedData.senderId,
     });
   });
 
@@ -208,10 +211,12 @@ if (waitingUsers.size === 1) {
       return;
     }
     const chatId = parsedData["chatId"];
+    console.log(`[INFO] User ${socket.id} is answering the call in chat ${chatId}.`);
+    
     io.to(chatId).emit("answer", {
       sdp: parsedData.sdp,
       type: parsedData.type,
-      sender: socket.id,
+      sender: parsedData.senderId,
     });
   });
 
@@ -228,7 +233,7 @@ if (waitingUsers.size === 1) {
       candidate: parsedData.candidate,
       sdpMid: parsedData.sdpMid,
       sdpMLineIndex: parsedData.sdpMLineIndex,
-      sender: socket.id,
+      sender: parsedData.senderId,
     });
   });
 
