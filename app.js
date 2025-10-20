@@ -7,8 +7,8 @@ const admin = require("firebase-admin");
 // or
 const { getMessaging } = require("firebase-admin/messaging"); // if using CommonJS
 
-// const serviceAccount = require("./serviceAccountKey.json");
-const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
+const serviceAccount = require("./serviceAccountKey.json");
+// const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
 let lastNotifyTime = 0;
 
 
@@ -183,107 +183,145 @@ if (waitingUsers.size === 1) {
     io.to(chatId).emit("message", data.toString());
   });
 
-  socket.on("offer", (data) => {
-    let parsedData;
-    try {
-      parsedData = typeof data === "string" ? JSON.parse(data) : data;
-    } catch (e) {
-      socket.emit("error", "Invalid data format.");
-      return;
-    }
-    const chatId = parsedData["chatId"];
-        console.log(`[INFO] User ${socket.id} is answering the call in chat ${chatId}.`);
-
-    
-    io.to(chatId).emit("offer", {
-      sdp: parsedData.sdp,
-      type: parsedData.type,
-      sender: parsedData.senderId,
-    });
+ socket.on("offer", (data) => {
+  let parsedData;
+  try {
+    parsedData = typeof data === "string" ? JSON.parse(data) : data;
+  } catch (e) {
+    socket.emit("error", "Invalid data format.");
+    return;
+  }
+  const chatId = parsedData["chatId"];
+  const senderId = parsedData["senderId"];
+  
+  console.log(`📞 Offer from ${senderId} in chat ${chatId}`);
+  
+  // Send to other users in the room except sender
+  socket.to(chatId).emit("offer", {
+    sdp: parsedData.sdp,
+    type: parsedData.type,
+    senderId: senderId,
+    chatId: chatId
   });
+});
 
-  socket.on("answer", (data) => {
-    let parsedData;
-    try {
-      parsedData = typeof data === "string" ? JSON.parse(data) : data;
-    } catch (e) {
-      socket.emit("error", "Invalid data format.");
-      return;
-    }
-    const chatId = parsedData["chatId"];
-    console.log(`[INFO] User ${socket.id} is answering the call in chat ${chatId}.`);
-    
-    io.to(chatId).emit("answer", {
-      sdp: parsedData.sdp,
-      type: parsedData.type,
-      sender: parsedData.senderId,
-    });
+socket.on("answer", (data) => {
+  let parsedData;
+  try {
+    parsedData = typeof data === "string" ? JSON.parse(data) : data;
+  } catch (e) {
+    socket.emit("error", "Invalid data format.");
+    return;
+  }
+  const chatId = parsedData["chatId"];
+  const senderId = parsedData["senderId"];
+  
+  console.log(`✅ Answer from ${senderId} in chat ${chatId}`);
+  
+  socket.to(chatId).emit("answer", {
+    sdp: parsedData.sdp,
+    type: parsedData.type,
+    senderId: senderId,
+    chatId: chatId
   });
+});
 
-  socket.on("candidate", (data) => {
-    let parsedData;
-    try {
-      parsedData = typeof data === "string" ? JSON.parse(data) : data;
-    } catch (e) {
-      socket.emit("error", "Invalid data format.");
-      return;
-    }
-    const chatId = parsedData["chatId"];
-    io.to(chatId).emit("candidate", {
-      candidate: parsedData.candidate,
-      sdpMid: parsedData.sdpMid,
-      sdpMLineIndex: parsedData.sdpMLineIndex,
-      sender: parsedData.senderId,
-    });
+socket.on("candidate", (data) => {
+  let parsedData;
+  try {
+    parsedData = typeof data === "string" ? JSON.parse(data) : data;
+  } catch (e) {
+    socket.emit("error", "Invalid data format.");
+    return;
+  }
+  const chatId = parsedData["chatId"];
+  const senderId = parsedData["senderId"];
+  
+  socket.to(chatId).emit("candidate", {
+    candidate: parsedData.candidate,
+    sdpMid: parsedData.sdpMid,
+    sdpMLineIndex: parsedData.sdpMLineIndex,
+    senderId: senderId,
+    chatId: chatId
   });
+});
 
-  socket.on("call_user", (data) => {
-    let parsedData;
-    try {
-      parsedData = typeof data === "string" ? JSON.parse(data) : data;
-    } catch (e) {
-      socket.emit("error", "Invalid data format.");
-      return;
-    }
-    const chatId = parsedData["chatId"];
-    io.to(chatId).emit("incoming_call", data.toString());
+ socket.on("call_user", (data) => {
+  let parsedData;
+  try {
+    parsedData = typeof data === "string" ? JSON.parse(data) : data;
+  } catch (e) {
+    socket.emit("error", "Invalid data format.");
+    return;
+  }
+  const chatId = parsedData["chatId"];
+  const callerId = parsedData["callerId"];
+  const type = parsedData["type"];
+  
+  console.log(`📞 ${type} call from ${callerId} in chat ${chatId}`);
+  
+  // Notify the other user in the chat room
+  socket.to(chatId).emit("incoming_call", {
+    callerId: callerId,
+    chatId: chatId,
+    type: type
   });
+});
 
   socket.on("accept_call", (data) => {
-    let parsedData;
-    try {
-      parsedData = typeof data === "string" ? JSON.parse(data) : data;
-    } catch (e) {
-      socket.emit("error", "Invalid data format.");
-      return;
-    }
-    const chatId = parsedData["chatId"];
-    io.to(chatId).emit("call_accepted", data.toString());
+  let parsedData;
+  try {
+    parsedData = typeof data === "string" ? JSON.parse(data) : data;
+  } catch (e) {
+    socket.emit("error", "Invalid data format.");
+    return;
+  }
+  const chatId = parsedData["chatId"];
+  const callerId = parsedData["callerId"];
+  const type = parsedData["type"];
+  
+  console.log(`✅ Call accepted in chat ${chatId}`);
+  
+  socket.to(chatId).emit("call_accepted", {
+    chatId: chatId,
+    type: type
   });
+});
 
   socket.on("reject_call", (data) => {
-    let parsedData;
-    try {
-      parsedData = typeof data === "string" ? JSON.parse(data) : data;
-    } catch (e) {
-      socket.emit("error", "Invalid data format.");
-      return;
-    }
-    const chatId = parsedData["chatId"];
-    io.to(chatId).emit("call_rejected", data.toString());
+  let parsedData;
+  try {
+    parsedData = typeof data === "string" ? JSON.parse(data) : data;
+  } catch (e) {
+    socket.emit("error", "Invalid data format.");
+    return;
+  }
+  const chatId = parsedData["chatId"];
+  const callerId = parsedData["callerId"];
+  
+  console.log(`❌ Call rejected in chat ${chatId}`);
+  
+  socket.to(chatId).emit("call_rejected", {
+    chatId: chatId,
+    callerId: callerId
   });
+});
+
 
   socket.on("hang_up", (data) => {
-    let parsedData;
-    try {
-      parsedData = typeof data === "string" ? JSON.parse(data) : data;
-    } catch (e) {
-      socket.emit("error", "Invalid data format.");
-      return;
-    }
-    const chatId = parsedData["chatId"];
-    io.to(chatId).emit("call_ended");
-  });
+  let parsedData;
+  try {
+    parsedData = typeof data === "string" ? JSON.parse(data) : data;
+  } catch (e) {
+    socket.emit("error", "Invalid data format.");
+    return;
+  }
+  const chatId = parsedData["chatId"];
+  
+  console.log(`📞 Call ended in chat ${chatId}`);
+  
+  socket.to(chatId).emit("call_ended");
+});
 
   socket.on("typing", (data) => {
     let parsedData;
