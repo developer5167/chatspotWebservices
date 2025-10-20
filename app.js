@@ -7,8 +7,8 @@ const admin = require("firebase-admin");
 // or
 const { getMessaging } = require("firebase-admin/messaging"); // if using CommonJS
 
-const serviceAccount = require("./serviceAccountKey.json");
-// const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
+// const serviceAccount = require("./serviceAccountKey.json");
+const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
 let lastNotifyTime = 0;
 
 
