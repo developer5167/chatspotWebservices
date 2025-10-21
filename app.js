@@ -7,10 +7,9 @@ const admin = require("firebase-admin");
 // or
 const { getMessaging } = require("firebase-admin/messaging"); // if using CommonJS
 
-// const serviceAccount = require("./serviceAccountKey.json");
-const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
+const serviceAccount = require("./serviceAccountKey.json");
+// const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
 let lastNotifyTime = 0;
-
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -32,24 +31,23 @@ const timers = new Map();
 const activeUsers = new Set();
 const deviceTokens = new Set(); // Add this at the top, after your other variables
 
-
 app.get("/", (req, res) => {
   res.send("Welcome");
 });
 app.post('/register-token', express.json(), (req, res) => {
   const { token } = req.body;
   if (token) {
-  deviceTokens.add(token);
-  console.log("Registered device token:", token);
-}
+    deviceTokens.add(token);
+    console.log("Registered device token:", token);
+  }
   res.status(200).send({ success: true });
 });
+
 io.on("connection", (socket) => {
   io.emit("");
   console.log("A user connected");
 
   socket.on("readyToPair", (data) => {
-    // notifyPreviousUsers()
     let parsedData;
     try {
       parsedData = typeof data === "string" ? JSON.parse(data) : data;
@@ -98,12 +96,16 @@ io.on("connection", (socket) => {
       }
     }
 
+    const wasEmptyBefore = waitingUsers.size === 0;
     waitingUsers.set(id, { id, gender, interestedIn, socketId: socket.id });
     console.log(`[WAITING] User ${id} added to the waiting queue.`);
     socket.emit("waiting", "Waiting for a compatible user...");
-if (waitingUsers.size === 1) {
-  maybeNotifyUsers();
-}
+    
+    // ✅ ONLY send notification when this is the FIRST AND ONLY user in waiting list
+    if (wasEmptyBefore && waitingUsers.size === 1) {
+      notifySingleUserWaiting();
+    }
+
     const countdown = setTimeout(() => {
       if (waitingUsers.has(id)) {
         waitingUsers.delete(id);
@@ -183,145 +185,144 @@ if (waitingUsers.size === 1) {
     io.to(chatId).emit("message", data.toString());
   });
 
- socket.on("offer", (data) => {
-  let parsedData;
-  try {
-    parsedData = typeof data === "string" ? JSON.parse(data) : data;
-  } catch (e) {
-    socket.emit("error", "Invalid data format.");
-    return;
-  }
-  const chatId = parsedData["chatId"];
-  const senderId = parsedData["senderId"];
-  
-  console.log(`📞 Offer from ${senderId} in chat ${chatId}`);
-  
-  // Send to other users in the room except sender
-  socket.to(chatId).emit("offer", {
-    sdp: parsedData.sdp,
-    type: parsedData.type,
-    senderId: senderId,
-    chatId: chatId
+  socket.on("offer", (data) => {
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
+    const chatId = parsedData["chatId"];
+    const senderId = parsedData["senderId"];
+    
+    console.log(`📞 Offer from ${senderId} in chat ${chatId}`);
+    
+    // Send to other users in the room except sender
+    socket.to(chatId).emit("offer", {
+      sdp: parsedData.sdp,
+      type: parsedData.type,
+      senderId: senderId,
+      chatId: chatId
+    });
   });
-});
 
-socket.on("answer", (data) => {
-  let parsedData;
-  try {
-    parsedData = typeof data === "string" ? JSON.parse(data) : data;
-  } catch (e) {
-    socket.emit("error", "Invalid data format.");
-    return;
-  }
-  const chatId = parsedData["chatId"];
-  const senderId = parsedData["senderId"];
-  
-  console.log(`✅ Answer from ${senderId} in chat ${chatId}`);
-  
-  socket.to(chatId).emit("answer", {
-    sdp: parsedData.sdp,
-    type: parsedData.type,
-    senderId: senderId,
-    chatId: chatId
+  socket.on("answer", (data) => {
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
+    const chatId = parsedData["chatId"];
+    const senderId = parsedData["senderId"];
+    
+    console.log(`✅ Answer from ${senderId} in chat ${chatId}`);
+    
+    socket.to(chatId).emit("answer", {
+      sdp: parsedData.sdp,
+      type: parsedData.type,
+      senderId: senderId,
+      chatId: chatId
+    });
   });
-});
 
-socket.on("candidate", (data) => {
-  let parsedData;
-  try {
-    parsedData = typeof data === "string" ? JSON.parse(data) : data;
-  } catch (e) {
-    socket.emit("error", "Invalid data format.");
-    return;
-  }
-  const chatId = parsedData["chatId"];
-  const senderId = parsedData["senderId"];
-  
-  socket.to(chatId).emit("candidate", {
-    candidate: parsedData.candidate,
-    sdpMid: parsedData.sdpMid,
-    sdpMLineIndex: parsedData.sdpMLineIndex,
-    senderId: senderId,
-    chatId: chatId
+  socket.on("candidate", (data) => {
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
+    const chatId = parsedData["chatId"];
+    const senderId = parsedData["senderId"];
+    
+    socket.to(chatId).emit("candidate", {
+      candidate: parsedData.candidate,
+      sdpMid: parsedData.sdpMid,
+      sdpMLineIndex: parsedData.sdpMLineIndex,
+      senderId: senderId,
+      chatId: chatId
+    });
   });
-});
 
- socket.on("call_user", (data) => {
-  let parsedData;
-  try {
-    parsedData = typeof data === "string" ? JSON.parse(data) : data;
-  } catch (e) {
-    socket.emit("error", "Invalid data format.");
-    return;
-  }
-  const chatId = parsedData["chatId"];
-  const callerId = parsedData["callerId"];
-  const type = parsedData["type"];
-  
-  console.log(`📞 ${type} call from ${callerId} in chat ${chatId}`);
-  
-  // Notify the other user in the chat room
-  socket.to(chatId).emit("incoming_call", {
-    callerId: callerId,
-    chatId: chatId,
-    type: type
+  socket.on("call_user", (data) => {
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
+    const chatId = parsedData["chatId"];
+    const callerId = parsedData["callerId"];
+    const type = parsedData["type"];
+    
+    console.log(`📞 ${type} call from ${callerId} in chat ${chatId}`);
+    
+    // Notify the other user in the chat room
+    socket.to(chatId).emit("incoming_call", {
+      callerId: callerId,
+      chatId: chatId,
+      type: type
+    });
   });
-});
 
   socket.on("accept_call", (data) => {
-  let parsedData;
-  try {
-    parsedData = typeof data === "string" ? JSON.parse(data) : data;
-  } catch (e) {
-    socket.emit("error", "Invalid data format.");
-    return;
-  }
-  const chatId = parsedData["chatId"];
-  const callerId = parsedData["callerId"];
-  const type = parsedData["type"];
-  
-  console.log(`✅ Call accepted in chat ${chatId}`);
-  
-  socket.to(chatId).emit("call_accepted", {
-    chatId: chatId,
-    type: type
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
+    const chatId = parsedData["chatId"];
+    const callerId = parsedData["callerId"];
+    const type = parsedData["type"];
+    
+    console.log(`✅ Call accepted in chat ${chatId}`);
+    
+    socket.to(chatId).emit("call_accepted", {
+      chatId: chatId,
+      type: type
+    });
   });
-});
 
   socket.on("reject_call", (data) => {
-  let parsedData;
-  try {
-    parsedData = typeof data === "string" ? JSON.parse(data) : data;
-  } catch (e) {
-    socket.emit("error", "Invalid data format.");
-    return;
-  }
-  const chatId = parsedData["chatId"];
-  const callerId = parsedData["callerId"];
-  
-  console.log(`❌ Call rejected in chat ${chatId}`);
-  
-  socket.to(chatId).emit("call_rejected", {
-    chatId: chatId,
-    callerId: callerId
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
+    const chatId = parsedData["chatId"];
+    const callerId = parsedData["callerId"];
+    
+    console.log(`❌ Call rejected in chat ${chatId}`);
+    
+    socket.to(chatId).emit("call_rejected", {
+      chatId: chatId,
+      callerId: callerId
+    });
   });
-});
-
 
   socket.on("hang_up", (data) => {
-  let parsedData;
-  try {
-    parsedData = typeof data === "string" ? JSON.parse(data) : data;
-  } catch (e) {
-    socket.emit("error", "Invalid data format.");
-    return;
-  }
-  const chatId = parsedData["chatId"];
-  
-  console.log(`📞 Call ended in chat ${chatId}`);
-  
-  socket.to(chatId).emit("call_ended");
-});
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
+    const chatId = parsedData["chatId"];
+    
+    console.log(`📞 Call ended in chat ${chatId}`);
+    
+    socket.to(chatId).emit("call_ended");
+  });
 
   socket.on("typing", (data) => {
     let parsedData;
@@ -379,9 +380,6 @@ socket.on("candidate", (data) => {
     if (removedId) {
       activeUsers.delete(removedId);
     }
-    if (activeUsers.size === 0) {
-      notifyPreviousUsers("A new user joined! Open the app to chat.");
-    }
   });
 });
 
@@ -394,20 +392,33 @@ function broadcastUserCount() {
   io.emit("updateUserCount", { totalUsers, waitingUsers: waitingUsersCount });
 }
 
-function notifyPreviousUsers(message) {
-  if (deviceTokens.size === 0) return;
+// New function specifically for single user waiting scenario
+function notifySingleUserWaiting() {
+  const now = Date.now();
+  
+  // Cooldown check - prevent spam notifications (2 minutes cooldown)
+  if (now - lastNotifyTime < 120000) {
+    console.log("⏳ Single user notification skipped (2-minute cooldown active).");
+    return;
+  }
+
+  if (deviceTokens.size === 0) {
+    console.log("ℹ️ No device tokens registered for notifications");
+    return;
+  }
 
   const tokens = Array.from(deviceTokens);
   const payload = {
     notification: {
-      title: "Pair",
-      body: message,
+      title: "Chat Partner Waiting!",
+      body: "Someone is waiting to chat! Open the app now to connect with them.",
     },
   };
 
   getMessaging()
     .sendEachForMulticast({ tokens, ...payload })
     .then((response) => {
+      // Clean up invalid tokens
       response.responses.forEach((res, index) => {
         if (!res.success) {
           const invalidToken = tokens[index];
@@ -415,32 +426,22 @@ function notifyPreviousUsers(message) {
           console.log("Removed invalid token:", invalidToken);
         }
       });
-      console.log(`✅ Sent to ${response.successCount} users`);
+      
+      lastNotifyTime = now;
+      console.log(`✅ Single user notification sent to ${response.successCount} users`);
+      console.log(`📢 Message: "Someone is waiting to chat! Open the app now to connect with them."`);
     })
     .catch((err) => {
-      console.error("❌ Error sending notifications:", err);
+      console.error("❌ Error sending single user notification:", err);
     });
 }
-
 function isCompatibleMatch(gender1, interest1, gender2, interest2) {
   if (interest1 === "Auto" || interest2 === "Auto") {
     return true;
   }
   return interest1 === gender2 && interest2 === gender1;
 }
-function maybeNotifyUsers() {
-  const now = Date.now();
-
-  // Notify only if it's been 30 seconds since last notification
-  if (now - lastNotifyTime > 30000) {
-    notifyPreviousUsers("Someone is waiting to chat! Join now and start a conversation.");
-    lastNotifyTime = now;
-    console.log("🔔 Notification sent to previous users.");
-  } else {
-    console.log("⏳ Notification skipped (cooldown active).");
-  }
-}
 const PORT = process.env.PORT || 2000;
-server.listen(PORT,"0.0.0.0", () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log("server running on " + PORT);
 });
