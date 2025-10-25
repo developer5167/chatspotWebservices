@@ -34,7 +34,7 @@ const deviceTokens = new Set(); // Add this at the top, after your other variabl
 app.get("/", (req, res) => {
   res.send("Welcome");
 });
-app.post('/register-token', express.json(), (req, res) => {
+app.post("/register-token", express.json(), (req, res) => {
   const { token } = req.body;
   if (token) {
     deviceTokens.add(token);
@@ -91,7 +91,7 @@ io.on("connection", (socket) => {
         activeUsers.delete(waitingUser.id);
         activeUsers.delete(id);
         broadcastUserCount();
-        
+
         return;
       }
     }
@@ -100,7 +100,7 @@ io.on("connection", (socket) => {
     waitingUsers.set(id, { id, gender, interestedIn, socketId: socket.id });
     console.log(`[WAITING] User ${id} added to the waiting queue.`);
     socket.emit("waiting", "Waiting for a compatible user...");
-    
+
     // ✅ ONLY send notification when this is the FIRST AND ONLY user in waiting list
     if (wasEmptyBefore && waitingUsers.size === 1) {
       notifySingleUserWaiting();
@@ -184,7 +184,6 @@ io.on("connection", (socket) => {
     const chatId = parsedData["chatId"];
     io.to(chatId).emit("message", data.toString());
   });
-
   socket.on("offer", (data) => {
     let parsedData;
     try {
@@ -195,15 +194,15 @@ io.on("connection", (socket) => {
     }
     const chatId = parsedData["chatId"];
     const senderId = parsedData["senderId"];
-    
+
     console.log(`📞 Offer from ${senderId} in chat ${chatId}`);
-    
+
     // Send to other users in the room except sender
     socket.to(chatId).emit("offer", {
       sdp: parsedData.sdp,
       type: parsedData.type,
       senderId: senderId,
-      chatId: chatId
+      chatId: chatId,
     });
   });
 
@@ -217,14 +216,14 @@ io.on("connection", (socket) => {
     }
     const chatId = parsedData["chatId"];
     const senderId = parsedData["senderId"];
-    
+
     console.log(`✅ Answer from ${senderId} in chat ${chatId}`);
-    
+
     socket.to(chatId).emit("answer", {
       sdp: parsedData.sdp,
       type: parsedData.type,
       senderId: senderId,
-      chatId: chatId
+      chatId: chatId,
     });
   });
 
@@ -238,13 +237,13 @@ io.on("connection", (socket) => {
     }
     const chatId = parsedData["chatId"];
     const senderId = parsedData["senderId"];
-    
+
     socket.to(chatId).emit("candidate", {
       candidate: parsedData.candidate,
       sdpMid: parsedData.sdpMid,
       sdpMLineIndex: parsedData.sdpMLineIndex,
       senderId: senderId,
-      chatId: chatId
+      chatId: chatId,
     });
   });
 
@@ -259,14 +258,14 @@ io.on("connection", (socket) => {
     const chatId = parsedData["chatId"];
     const callerId = parsedData["callerId"];
     const type = parsedData["type"];
-    
+
     console.log(`📞 ${type} call from ${callerId} in chat ${chatId}`);
-    
+
     // Notify the other user in the chat room
     socket.to(chatId).emit("incoming_call", {
       callerId: callerId,
       chatId: chatId,
-      type: type
+      type: type,
     });
   });
 
@@ -281,12 +280,12 @@ io.on("connection", (socket) => {
     const chatId = parsedData["chatId"];
     const callerId = parsedData["callerId"];
     const type = parsedData["type"];
-    
+
     console.log(`✅ Call accepted in chat ${chatId}`);
-    
+
     socket.to(chatId).emit("call_accepted", {
       chatId: chatId,
-      type: type
+      type: type,
     });
   });
 
@@ -300,12 +299,12 @@ io.on("connection", (socket) => {
     }
     const chatId = parsedData["chatId"];
     const callerId = parsedData["callerId"];
-    
+
     console.log(`❌ Call rejected in chat ${chatId}`);
-    
+
     socket.to(chatId).emit("call_rejected", {
       chatId: chatId,
-      callerId: callerId
+      callerId: callerId,
     });
   });
 
@@ -318,9 +317,9 @@ io.on("connection", (socket) => {
       return;
     }
     const chatId = parsedData["chatId"];
-    
+
     console.log(`📞 Call ended in chat ${chatId}`);
-    
+
     socket.to(chatId).emit("call_ended");
   });
 
@@ -359,6 +358,23 @@ io.on("connection", (socket) => {
     const chatId = parsedData["chatId"];
     io.to(chatId).emit("leftChatRoomMessage", "User left the chat");
   });
+  socket.on("getWaitingUsers", (data) => {
+    broadcastUserCount();
+  });
+  socket.on("closedApp", (data) => {
+    console.log("closedApp" + data);
+
+    let parsedData;
+    try {
+      parsedData = typeof data === "string" ? JSON.parse(data) : data;
+    } catch (e) {
+      socket.emit("error", "Invalid data format.");
+      return;
+    }
+    const chatId = parsedData["chatId"];
+    io.to(chatId).emit("closedApp", "User closed the app");
+    broadcastUserCount();
+  });
 
   socket.on("disconnect", () => {
     console.log("A user disconnected");
@@ -395,10 +411,12 @@ function broadcastUserCount() {
 // New function specifically for single user waiting scenario
 function notifySingleUserWaiting() {
   const now = Date.now();
-  
+
   // Cooldown check - prevent spam notifications (2 minutes cooldown)
   if (now - lastNotifyTime < 120000) {
-    console.log("⏳ Single user notification skipped (2-minute cooldown active).");
+    console.log(
+      "⏳ Single user notification skipped (2-minute cooldown active)."
+    );
     return;
   }
 
@@ -426,10 +444,14 @@ function notifySingleUserWaiting() {
           console.log("Removed invalid token:", invalidToken);
         }
       });
-      
+
       lastNotifyTime = now;
-      console.log(`✅ Single user notification sent to ${response.successCount} users`);
-      console.log(`📢 Message: "Someone is waiting to chat! Open the app now to connect with them."`);
+      console.log(
+        `✅ Single user notification sent to ${response.successCount} users`
+      );
+      console.log(
+        `📢 Message: "Someone is waiting to chat! Open the app now to connect with them."`
+      );
     })
     .catch((err) => {
       console.error("❌ Error sending single user notification:", err);
