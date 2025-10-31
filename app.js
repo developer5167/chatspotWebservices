@@ -4,12 +4,17 @@ const cors = require("cors");
 const { Server } = require("socket.io");
 const app = express();
 const admin = require("firebase-admin");
+const path = require('path');
+const fs = require('fs');
+
 // or
 const { getMessaging } = require("firebase-admin/messaging"); // if using CommonJS
 
-// const serviceAccount = require("./serviceAccountKey.json");
-const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
+const serviceAccount = require("./serviceAccountKey.json");
+// const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
 let lastNotifyTime = 0;
+const MIN_FAKE = 100;
+const MAX_FAKE = 2000;
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -26,10 +31,34 @@ const io = new Server(server, {
     credentials: false,
   },
 });
+const HuggingFaceBot = require("./huggingface-bot");
+const botModule = new HuggingFaceBot(io);
 const waitingUsers = new Map();
+let virtualUsers = [];
+
 const timers = new Map();
 const activeUsers = new Set();
 const deviceTokens = new Set(); // Add this at the top, after your other variables
+
+const VIRTUAL_USERS_PATH = path.join(__dirname, "virtual_users.json");
+
+try {
+  if (fs.existsSync(VIRTUAL_USERS_PATH)) {
+    const data = fs.readFileSync(VIRTUAL_USERS_PATH, "utf8");
+    virtualUsers = JSON.parse(data);
+    console.log(`Loaded ${virtualUsers.length} virtual users`);
+  } else {
+    console.log(
+      "virtual_users.json not found — virtualUsers is empty for now."
+    );
+  }
+} catch (err) {
+  console.error("Error loading virtual_users.json:", err);
+  virtualUsers = [];
+}
+
+
+
 
 app.get("/", (req, res) => {
   res.send("Welcome");
@@ -108,15 +137,60 @@ io.on("connection", (socket) => {
 
     const countdown = setTimeout(() => {
       if (waitingUsers.has(id)) {
+        console.log(
+          `[TIMEOUT] No real match for ${id}. Trying virtual user...`
+        );
+
+        // choose a virtual user profile (implement or reuse your existing pool)
+        // Example simple virtual selection:
+        const virtualProfile =
+          virtualUsers && virtualUsers.length
+            ? virtualUsers[Math.floor(Math.random() * virtualUsers.length)]
+            : {
+                id: `bot_${Math.random().toString(36).slice(2, 8)}`,
+                name: "Riya",
+                displayName: "Riya",
+                persona: "friendly",
+                city: "Bengaluru",
+              };
+
+        // create server-generated chatId for bot session (must be sent to client)
+        const chatId = `chat_${Date.now()}_${Math.random()
+          .toString(36)
+          .slice(2, 6)}`;
+
+        // emit pair event to user with isBot true and chatId
+        io.to(socket.id).emit(
+          "pair",
+          JSON.stringify({
+            id: virtualProfile.id || virtualProfile.name,
+            gender: virtualProfile.gender || "Any",
+            name: virtualProfile.displayName || virtualProfile.name,
+            chatId,
+            isBot: true,
+          })
+        );
+
+        // create bot session in separate module and map chat->socket
+        botModule.createBotSession(
+          chatId,
+          {
+            id: virtualProfile.id || virtualProfile.name,
+            displayName: virtualProfile.displayName || virtualProfile.name,
+            persona: virtualProfile.persona,
+            city: virtualProfile.city,
+            profession: virtualProfile.profession,
+            hobby: virtualProfile.hobby,
+          },
+          socket.id
+        );
+
+        // cleanup waiting queue for this user
         waitingUsers.delete(id);
         timers.delete(id);
         activeUsers.delete(id);
         broadcastUserCount();
-        socket.emit(
-          "timeout",
-          "No user found! change your pref and try rejoin"
-        );
-        console.log(`[TIMEOUT] User ${id} removed from the queue.`);
+        return;
       }
     }, 30000);
 
@@ -182,6 +256,18 @@ io.on("connection", (socket) => {
       return;
     }
     const chatId = parsedData["chatId"];
+
+
+if (botModule.isBotChat && botModule.isBotChat(chatId)) {
+    // still emit the user's message back to the client (so it appears in UI)
+    const userSocketId = botModule && botModule.botChatMap ? botModule.botChatMap.get(chatId) : null;
+    // simply emit to the room/user so the UI sees the message (existing behavior)
+    io.to(chatId).emit("message", data.toString()); // or emit to socket.id if needed
+
+    // let botModule handle reply generation and emission
+    botModule.handleUserMessage(chatId, parsedData);
+    return;
+  }
     io.to(chatId).emit("message", data.toString());
   });
   socket.on("offer", (data) => {
@@ -351,11 +437,13 @@ io.on("connection", (socket) => {
     let parsedData;
     try {
       parsedData = typeof data === "string" ? JSON.parse(data) : data;
+      endSession
     } catch (e) {
       socket.emit("error", "Invalid data format.");
       return;
     }
     const chatId = parsedData["chatId"];
+    botModule.endSession(chatId)
     io.to(chatId).emit("leftChatRoomMessage", "User left the chat");
   });
   socket.on("getWaitingUsers", (data) => {
@@ -463,6 +551,17 @@ function isCompatibleMatch(gender1, interest1, gender2, interest2) {
   }
   return interest1 === gender2 && interest2 === gender1;
 }
+setInterval(() => {
+  try {
+    const fakeWaiting = Math.floor(Math.random() * (MAX_FAKE - MIN_FAKE + 1)) + MIN_FAKE;
+    const combinedWaiting = Math.max(waitingUsers.size, fakeWaiting);
+    const combinedTotal = activeUsers.size + (combinedWaiting - waitingUsers.size);
+    io.emit("updateUserCount", { totalUsers: combinedTotal, waitingUsers: combinedWaiting });
+    console.log(`[FAKE-BROADCAST] Active Users: ${combinedTotal}, Waiting Users: ${combinedWaiting}`);
+  } catch (err) {
+    console.error("Error in fake users broadcast:", err);
+  }
+}, 10 * 1000); 
 const PORT = process.env.PORT || 2000;
 server.listen(PORT, "0.0.0.0", () => {
   console.log("server running on " + PORT);
