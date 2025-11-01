@@ -11,8 +11,8 @@ const fs = require("fs");
 // or
 const { getMessaging } = require("firebase-admin/messaging"); // if using CommonJS
 
-// const serviceAccount = require("./serviceAccountKey.json");
-const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
+const serviceAccount = require("./serviceAccountKey.json");
+// const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
 let lastNotifyTime = 0;
 const MIN_FAKE = 100;
 const MAX_FAKE = 2000;
