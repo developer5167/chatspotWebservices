@@ -223,9 +223,10 @@ class HuggingFaceBot {
 
     const name = session.displayName;
     const gender = session.gender === "M" ? "boy" : "girl";
+    const location = session.location || "India";
 
     const systemPrompt = `
-You are ${name}, an average young ${gender} from India chatting casually with a stranger online.
+You are ${name}, an average young ${gender} from ${location} chatting casually with a stranger online.
 You are NOT an AI. Never say you're a model, bot, or trained assistant.
 Speak in simple, casual Indian English — not formal or advanced.
 Use short, natural sentences. Add expressions like "ya", "haha", "hmm", "you know", "like that" sometimes.
@@ -270,9 +271,9 @@ IMPORTANT: This conversation will end after a few more messages, so keep respons
       const text = data.choices[0].message.content.trim();
       const match = text.match(/\[MYRA\](.*?)(?=\[|$)/is);
       const cleanResponse = match ? match[1].trim() : text;
-
-      console.log(`🤖 Bot (${model}) → ${cleanResponse}`);
-      return cleanResponse;
+      const cleanResponse1 = cleanBotResponse(cleanResponse);
+      console.log(`🤖 Bot (${model}) → ${cleanResponse1}`);
+      return cleanResponse1;
     } else if (response.status === 404) {
       console.error("❌ Model not found, rotating...");
       this.rotateModel();
@@ -406,5 +407,50 @@ IMPORTANT: This conversation will end after a few more messages, so keep respons
 }
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+function cleanBotResponse(text) {
+  if (!text) return this.getFallbackResponse("");
+  
+  // Step 1: Remove ALL variations of USER (case insensitive)
+  let cleaned = text
+    .replace(/\[USER\]/gi, '')      // Remove [USER] (case insensitive)
+    .replace(/\bUSER\b/gi, '')      // Remove standalone USER (case insensitive)
+    .replace(/\buser\b/gi, '')      // Remove standalone user (case insensitive)
+    .replace(/\[.*?\]/g, '')        // Remove any other bracketed tags
+    .replace(/<.*?>/g, '')          // Remove any angle bracket tags
+    .replace(/\(.*?\)/g, '')        // Remove parentheses content
+    .replace(/\*\*(.*?)\*\*/g, '$1') // **bold** → bold
+    .replace(/\*(.*?)\*/g, '$1')     // *italic* → italic
+    .replace(/_(.*?)_/g, '$1')       // _underline_ → underline
+    .replace(/`(.*?)`/g, '$1')       // `code` → code
+    .replace(/~(.*?)~/g, '$1');      // ~strike~ → strike
 
+  // Step 2: Remove problematic special characters
+  cleaned = cleaned.replace(/[\\\/#@$%^&*_+=[\]{}|;:"<>?~`]/g, '');
+  
+  // Step 3: Clean up whitespace and remove extra spaces caused by removals
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  
+  // Step 4: Remove any double punctuation or weird spacing
+  cleaned = cleaned
+    .replace(/\s+\./g, '.')
+    .replace(/\s+,/g, ',')
+    .replace(/\s+!/g, '!')
+    .replace(/\s+\?/g, '?')
+    .replace(/\.\.+/g, '.')
+    .replace(/, ,/g, ',')
+    .replace(/! !/g, '!')
+    .replace(/\? \?/g, '?');
+
+  // Step 5: Capitalize first letter
+  if (cleaned.length > 0) {
+    cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+  
+  // Step 6: Fallback if empty or contains only whitespace
+  if (!cleaned || cleaned.trim().length === 0) {
+    return this.getFallbackResponse("");
+  }
+  
+  return cleaned;
+}
 module.exports = HuggingFaceBot;

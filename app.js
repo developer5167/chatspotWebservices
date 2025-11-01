@@ -16,13 +16,18 @@ const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
 let lastNotifyTime = 0;
 const MIN_FAKE = 100;
 const MAX_FAKE = 2000;
-
+const urlRegex = /(?:https?|ftp):\/\/[^\s/$.?#].[^\s]*|www\.[^\s/$.?#].[^\s]*/i;
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 app.use(cors());
 
 const server = http.createServer(app);
+
+function containsUrl(text) {
+  // The .test() method returns true if the regex finds a match in the string
+  return urlRegex.test(text);
+}
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -261,17 +266,26 @@ io.on("connection", (socket) => {
     }
     const chatId = parsedData["chatId"];
     // const text = parsedData["message"] || parsedData["text"] || "";
-
+    if (containsUrl(data.toString())) {
+      console.log(`Blocked message: "${data.toString()}" - Contains a URL.`);
+      io.to(chatId).emit("welcomeNote", `Message blocked: Contains a URL.`);
+      return;
+    }
     if (botModule.isBotChat && botModule.isBotChat(chatId)) {
-        // still emit the user's message back to the client (so it appears in UI)
-        const userSocketId = botModule && botModule.botChatMap ? botModule.botChatMap.get(chatId) : null;
-        // simply emit to the room/user so the UI sees the message (existing behavior)
-        io.to(chatId).emit("message", data.toString()); // or emit to socket.id if needed
+      // still emit the user's message back to the client (so it appears in UI)
+      const userSocketId =
+        botModule && botModule.botChatMap
+          ? botModule.botChatMap.get(chatId)
+          : null;
+      // simply emit to the room/user so the UI sees the message (existing behavior)
+      io.to(chatId).emit("message", data.toString()); // or emit to socket.id if needed
 
-        // let botModule handle reply generation and emission
-        botModule.handleUserMessage(chatId, parsedData);
-        return;
-      }
+      // let botModule handle reply generation and emission
+      botModule.handleUserMessage(chatId, parsedData);
+      return;
+    }
+   
+
     io.to(chatId).emit("message", data.toString());
     // if (botModule.isBotChat(chatId)) {
     //   botModule.handleUserMessage(chatId, { message: text });
@@ -496,18 +510,21 @@ io.on("connection", (socket) => {
     }
   });
 });
+// Add this method to your HuggingFaceBot class
 
 function broadcastUserCount() {
   const fakeWaiting =
-      Math.floor(Math.random() * (MAX_FAKE - MIN_FAKE + 1)) + MIN_FAKE;
-    // const combinedWaiting = Math.max(waitingUsers.size, fakeWaiting);
-    // const combinedTotal =activeUsers.size + (combinedWaiting - waitingUsers.size);
-    
-   
+    Math.floor(Math.random() * (MAX_FAKE - MIN_FAKE + 1)) + MIN_FAKE;
+  // const combinedWaiting = Math.max(waitingUsers.size, fakeWaiting);
+  // const combinedTotal =activeUsers.size + (combinedWaiting - waitingUsers.size);
+
   const totalUsers = activeUsers.size;
   const waitingUsersCount = waitingUsers.size;
-  
-  io.emit("updateUserCount", { totalUsers, waitingUsers: waitingUsersCount+fakeWaiting });
+
+  io.emit("updateUserCount", {
+    totalUsers,
+    waitingUsers: waitingUsersCount + fakeWaiting,
+  });
 }
 
 // New function specifically for single user waiting scenario
@@ -567,7 +584,7 @@ function isCompatibleMatch(gender1, interest1, gender2, interest2) {
 }
 setInterval(() => {
   try {
-     broadcastUserCount();
+    broadcastUserCount();
   } catch (err) {
     console.error("Error in fake users broadcast:", err);
   }
