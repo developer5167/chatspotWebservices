@@ -4,14 +4,15 @@ const cors = require("cors");
 const { Server } = require("socket.io");
 const app = express();
 const admin = require("firebase-admin");
-const path = require('path');
-const fs = require('fs');
+const path = require("path");
+const fs = require("fs");
+// const botModule = require("./chroma-db-disabled");
 
 // or
 const { getMessaging } = require("firebase-admin/messaging"); // if using CommonJS
 
-const serviceAccount = require("./serviceAccountKey.json");
-// const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
+// const serviceAccount = require("./serviceAccountKey.json");
+const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
 let lastNotifyTime = 0;
 const MIN_FAKE = 100;
 const MAX_FAKE = 2000;
@@ -33,6 +34,7 @@ const io = new Server(server, {
 });
 const HuggingFaceBot = require("./huggingface-bot");
 const botModule = new HuggingFaceBot(io);
+
 const waitingUsers = new Map();
 let virtualUsers = [];
 
@@ -56,9 +58,6 @@ try {
   console.error("Error loading virtual_users.json:", err);
   virtualUsers = [];
 }
-
-
-
 
 app.get("/", (req, res) => {
   res.send("Welcome");
@@ -170,6 +169,11 @@ io.on("connection", (socket) => {
             isBot: true,
           })
         );
+        // const session = botModule.createBotSession(
+        //   chatId,
+        //   virtualProfile /* random profile */,
+        //   socket.id
+        // );
 
         // create bot session in separate module and map chat->socket
         botModule.createBotSession(
@@ -256,19 +260,23 @@ io.on("connection", (socket) => {
       return;
     }
     const chatId = parsedData["chatId"];
+    // const text = parsedData["message"] || parsedData["text"] || "";
 
+    if (botModule.isBotChat && botModule.isBotChat(chatId)) {
+        // still emit the user's message back to the client (so it appears in UI)
+        const userSocketId = botModule && botModule.botChatMap ? botModule.botChatMap.get(chatId) : null;
+        // simply emit to the room/user so the UI sees the message (existing behavior)
+        io.to(chatId).emit("message", data.toString()); // or emit to socket.id if needed
 
-if (botModule.isBotChat && botModule.isBotChat(chatId)) {
-    // still emit the user's message back to the client (so it appears in UI)
-    const userSocketId = botModule && botModule.botChatMap ? botModule.botChatMap.get(chatId) : null;
-    // simply emit to the room/user so the UI sees the message (existing behavior)
-    io.to(chatId).emit("message", data.toString()); // or emit to socket.id if needed
-
-    // let botModule handle reply generation and emission
-    botModule.handleUserMessage(chatId, parsedData);
-    return;
-  }
+        // let botModule handle reply generation and emission
+        botModule.handleUserMessage(chatId, parsedData);
+        return;
+      }
     io.to(chatId).emit("message", data.toString());
+    // if (botModule.isBotChat(chatId)) {
+    //   botModule.handleUserMessage(chatId, { message: text });
+    //   return;
+    // }
   });
   socket.on("offer", (data) => {
     let parsedData;
@@ -437,13 +445,13 @@ if (botModule.isBotChat && botModule.isBotChat(chatId)) {
     let parsedData;
     try {
       parsedData = typeof data === "string" ? JSON.parse(data) : data;
-      endSession
+      endSession;
     } catch (e) {
       socket.emit("error", "Invalid data format.");
       return;
     }
     const chatId = parsedData["chatId"];
-    botModule.endSession(chatId)
+    botModule.endSession(chatId);
     io.to(chatId).emit("leftChatRoomMessage", "User left the chat");
   });
   socket.on("getWaitingUsers", (data) => {
@@ -476,6 +484,8 @@ if (botModule.isBotChat && botModule.isBotChat(chatId)) {
         }
         activeUsers.delete(id);
         removedId = id;
+        botModule.endSession(chatId);
+
         console.log(`[DISCONNECT] User ${id} removed from queue.`);
         broadcastUserCount();
         break;
@@ -488,12 +498,16 @@ if (botModule.isBotChat && botModule.isBotChat(chatId)) {
 });
 
 function broadcastUserCount() {
+  const fakeWaiting =
+      Math.floor(Math.random() * (MAX_FAKE - MIN_FAKE + 1)) + MIN_FAKE;
+    // const combinedWaiting = Math.max(waitingUsers.size, fakeWaiting);
+    // const combinedTotal =activeUsers.size + (combinedWaiting - waitingUsers.size);
+    
+   
   const totalUsers = activeUsers.size;
   const waitingUsersCount = waitingUsers.size;
-  console.log(
-    `[UPDATE] Active Users: ${totalUsers}, Waiting Users: ${waitingUsersCount}`
-  );
-  io.emit("updateUserCount", { totalUsers, waitingUsers: waitingUsersCount });
+  
+  io.emit("updateUserCount", { totalUsers, waitingUsers: waitingUsersCount+fakeWaiting });
 }
 
 // New function specifically for single user waiting scenario
@@ -553,16 +567,34 @@ function isCompatibleMatch(gender1, interest1, gender2, interest2) {
 }
 setInterval(() => {
   try {
-    const fakeWaiting = Math.floor(Math.random() * (MAX_FAKE - MIN_FAKE + 1)) + MIN_FAKE;
-    const combinedWaiting = Math.max(waitingUsers.size, fakeWaiting);
-    const combinedTotal = activeUsers.size + (combinedWaiting - waitingUsers.size);
-    io.emit("updateUserCount", { totalUsers: combinedTotal, waitingUsers: combinedWaiting });
-    console.log(`[FAKE-BROADCAST] Active Users: ${combinedTotal}, Waiting Users: ${combinedWaiting}`);
+     broadcastUserCount();
   } catch (err) {
     console.error("Error in fake users broadcast:", err);
   }
-}, 10 * 1000); 
+}, 10 * 1000);
+// const PORT = process.env.PORT || 2000;
+// server.listen(PORT, "0.0.0.0", () => {
+//   console.log("server running on " + PORT);
+// });
 const PORT = process.env.PORT || 2000;
-server.listen(PORT, "0.0.0.0", () => {
-  console.log("server running on " + PORT);
-});
+
+async function startServer() {
+  try {
+    // Test ChromaDB connection
+    try {
+      await chroma.listCollections();
+      console.log("ChromaDB connection successful");
+    } catch (err) {
+      console.warn("ChromaDB not available, using fallback storage");
+    }
+
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log("Server running on port " + PORT);
+    });
+  } catch (err) {
+    console.error("Failed to start server:", err);
+    process.exit(1);
+  }
+}
+
+startServer();

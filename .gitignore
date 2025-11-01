@@ -2,3 +2,8 @@
 /serviceAccountKey.json
 /.gitignore
 /package-lock.json
+/.env
+/.env.local
+/.env.production
+/.env.test
+.DS_Store

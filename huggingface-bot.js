@@ -14,20 +14,40 @@ class HuggingFaceBot {
     }
 
     this.models = ["HuggingFaceH4/zephyr-7b-beta:featherless-ai"];
-
     this.currentModelIndex = 0;
     this.botSessions = new Map();
     this.botChatMap = new Map();
-    this.idleTimers = new Map(); // 🕒 track inactivity
+    this.idleTimers = new Map();
+    
+    // Message limit configuration
+    this.MAX_MESSAGES_PER_SESSION = 20;
 
     this.fallbackResponses = [
       "Hey, what happened ya?",
       "You went silent only 😅",
       "Still there?",
       "Hello? You disappeared like that!",
-      "You didn’t reply only 😆",
+      "You didn't reply only 😆",
       "Hey, I was talking to you only!",
       "Aree, where did you go?",
+    ];
+
+    this.goodbyeMessages = [
+      "It was really nice talking to you! Take care bye 👋",
+      "Had a great chat with you! See you around 😊",
+      "This was fun talking! Goodbye for now 👍",
+      "Nice conversation! Catch you later bye 👋",
+      "Enjoyed our chat! Take care and bye 👋",
+      "It was lovely talking to you! Bye for now 😄",
+      "Great conversation! Have a good one bye 👋",
+      "Really nice chatting with you! See ya 👋",
+      "This was a good talk! Bye and take care 😊",
+      "Loved our conversation! Goodbye for now 👋",
+      "It was wonderful talking to you! Bye 👋",
+      "Nice meeting you through chat! Take care bye 👍",
+      "Enjoyed our time talking! See you later 👋",
+      "This was a pleasant chat! Goodbye 😄",
+      "Had a good time chatting! Bye for now 👋"
     ];
   }
 
@@ -45,12 +65,11 @@ class HuggingFaceBot {
     const name = gender === "male" ? "Rahul" : "Myra";
 
     const session = {
-      botId:
-        virtualProfile.id || `bot_${Math.random().toString(36).slice(2, 9)}`,
+      botId: virtualProfile.id || `bot_${Math.random().toString(36).slice(2, 9)}`,
       displayName: name,
       gender,
       persona: virtualProfile.persona || "friendly",
-      messageCount: 0,
+      messageCount: 0, // Track bot messages sent
       conversationHistory: [],
       userSocketId,
     };
@@ -81,7 +100,10 @@ class HuggingFaceBot {
       this.idleTimers.delete(chatId);
     }
 
-    await delay(1500 + Math.random() * 1000); // natural response delay
+    // Check if session should end (bot already sent goodbye)
+    if (session.ended) return;
+
+    await delay(1500 + Math.random() * 1000);
 
     this.io
       .to(userSocketId)
@@ -93,7 +115,7 @@ class HuggingFaceBot {
     try {
       const botResponse = await this.queryHuggingFace(userMessage, session);
 
-      const delayTime = 1500 + Math.random() * 2500; // 1.5–4 sec realistic delay
+      const delayTime = 1500 + Math.random() * 2500;
       setTimeout(() => {
         this.io
           .to(userSocketId)
@@ -102,13 +124,18 @@ class HuggingFaceBot {
             JSON.stringify({ senderId: session.botId, status: false })
           );
 
-        this.sendBotMessage(chatId, session, botResponse);
-        session.conversationHistory.push(`User: ${userMessage}`);
-        session.conversationHistory.push(`Bot: ${botResponse}`);
-        session.messageCount++;
+        // Check if this will be the 20th message
+        if (session.messageCount >= this.MAX_MESSAGES_PER_SESSION - 1) {
+          this.sendGoodbyeAndEndSession(chatId, session);
+        } else {
+          this.sendBotMessage(chatId, session, botResponse);
+          session.conversationHistory.push(`User: ${userMessage}`);
+          session.conversationHistory.push(`Bot: ${botResponse}`);
+          session.messageCount++;
 
-        // restart idle timer after bot replies
-        this.startIdleTimer(chatId, session);
+          // restart idle timer after bot replies
+          this.startIdleTimer(chatId, session);
+        }
       }, 1000);
     } catch (error) {
       console.error("🤖 Hugging Face API error:", error.message);
@@ -118,10 +145,76 @@ class HuggingFaceBot {
           "typingMessageOff",
           JSON.stringify({ senderId: session.botId, status: false })
         );
-      const fallbackResponse = this.getFallbackResponse(userMessage);
-      this.sendBotMessage(chatId, session, fallbackResponse);
-      this.startIdleTimer(chatId, session);
+      
+      // Check if this will be the 20th message even for fallback
+      if (session.messageCount >= this.MAX_MESSAGES_PER_SESSION - 1) {
+        this.sendGoodbyeAndEndSession(chatId, session);
+      } else {
+        const fallbackResponse = this.getFallbackResponse(userMessage);
+        this.sendBotMessage(chatId, session, fallbackResponse);
+        session.messageCount++;
+        this.startIdleTimer(chatId, session);
+      }
     }
+  }
+
+  sendBotMessage(chatId, session, message) {
+    if (!this.io || !message) return;
+    const userSocketId = this.botChatMap.get(chatId);
+    if (!userSocketId) return;
+
+    this.io.to(userSocketId).emit(
+      "message",
+      JSON.stringify({
+        chatId,
+        senderId: session.botId,
+        name: session.displayName,
+        isBot: true,
+        message,
+      })
+    );
+
+    console.log(`[BOT] ${session.displayName} (${session.messageCount + 1}/${this.MAX_MESSAGES_PER_SESSION}): ${message}`);
+    
+    // Increment message count after sending
+    session.messageCount++;
+  }
+
+  sendGoodbyeAndEndSession(chatId, session) {
+    const userSocketId = this.botChatMap.get(chatId);
+    if (!userSocketId) return;
+
+    const goodbyeMessage = this.goodbyeMessages[
+      Math.floor(Math.random() * this.goodbyeMessages.length)
+    ];
+
+    // Send final goodbye message
+    this.io.to(userSocketId).emit(
+      "message",
+      JSON.stringify({
+        chatId,
+        senderId: session.botId,
+        name: session.displayName,
+        isBot: true,
+        message: goodbyeMessage,
+      })
+    );
+
+    console.log(`[GOODBYE] ${session.displayName} ended chat after ${session.messageCount} messages: ${goodbyeMessage}`);
+
+    // Mark session as ended
+    session.ended = true;
+
+    // Clear any idle timers
+    if (this.idleTimers.has(chatId)) {
+      clearTimeout(this.idleTimers.get(chatId));
+      this.idleTimers.delete(chatId);
+    }
+
+    // End session after a short delay
+    setTimeout(() => {
+      this.endSession(chatId);
+    }, 3000);
   }
 
   async queryHuggingFace(userMessage, session) {
@@ -139,6 +232,9 @@ Use short, natural sentences. Add expressions like "ya", "haha", "hmm", "you kno
 You can talk about everyday life, relationships, dating, friendship, love, and emotions naturally — but stay respectful and chill.
 Reply like a real human having a light, personal conversation.
 Don't give long answers — just one or two lines max.
+Don't share whatsapp numbers, instagram id, phone numbers or any personal information.
+Don't say yes when user say i love you, will you marry me but gently say no. 
+IMPORTANT: This conversation will end after a few more messages, so keep responses simple.
 `;
 
     const payload = {
@@ -147,11 +243,11 @@ Don't give long answers — just one or two lines max.
         { role: "system", content: systemPrompt },
         ...session.conversationHistory.map((line) => ({
           role: line.startsWith("User") ? "user" : "assistant",
-          content: line.replace(/^(User|Bot): /, ""),
+          content: line.replace(/^(User|Bot|[USER]|USER): /, ""),
         })),
         { role: "user", content: userMessage },
       ],
-      max_tokens: 100,
+      max_tokens: 10,
       temperature: 0.85,
       top_p: 0.9,
     };
@@ -190,31 +286,12 @@ Don't give long answers — just one or two lines max.
     }
   }
 
-  sendBotMessage(chatId, session, message) {
-    if (!this.io || !message) return;
-    const userSocketId = this.botChatMap.get(chatId);
-    if (!userSocketId) return;
-
-    this.io.to(userSocketId).emit(
-      "message",
-      JSON.stringify({
-        chatId,
-        senderId: session.botId,
-        name: session.displayName,
-        isBot: true,
-        message,
-      })
-    );
-
-    console.log(`[BOT] ${session.displayName}: ${message}`);
-  }
-
   getGreeting() {
     const greetings = [
-      "Hey! How’s it going?",
-      "Hi there, what’s up?",
+      "Hey! How's it going?",
+      "Hi there, what's up?",
       "Hello! Nice to meet you!",
-      "Hey! How’s your day so far?",
+      "Hey! How's your day so far?",
     ];
     return greetings[Math.floor(Math.random() * greetings.length)];
   }
@@ -224,8 +301,8 @@ Don't give long answers — just one or two lines max.
     const lower = userMessage.toLowerCase();
 
     if (lower.includes("name")) return "I'm Myra! What about you?";
-    if (lower.includes("where")) return "I'm from Bangalore only ya!";
-    if (lower.includes("age")) return "Haha just normal age only 😅";
+    if (lower.includes("where")) return "I'm from Bangalore";
+    if (lower.includes("age")) return "Haha just normal age";
     if (
       lower.includes("hi") ||
       lower.includes("hello") ||
@@ -243,6 +320,11 @@ Don't give long answers — just one or two lines max.
   }
 
   startIdleTimer(chatId, session) {
+    // Don't start idle timer if session is about to end
+    if (session.messageCount >= this.MAX_MESSAGES_PER_SESSION - 2 || session.ended) {
+      return;
+    }
+
     // Clear existing idle timer if any
     if (this.idleTimers.has(chatId)) {
       clearTimeout(this.idleTimers.get(chatId));
@@ -250,15 +332,23 @@ Don't give long answers — just one or two lines max.
     }
 
     // Start new idle timer
-    const idleDelay = 9000 + Math.random() * 3000; // 9–12 sec
+    const idleDelay = 15000 + Math.random() * 5000; // 15–20 sec
     const timer = setTimeout(() => {
-      this.sendIdlePrompt(chatId, session);
-    }, 15000);
+      // Check again before sending idle prompt
+      if (!session.ended && session.messageCount < this.MAX_MESSAGES_PER_SESSION - 1) {
+        this.sendIdlePrompt(chatId, session);
+      }
+    }, idleDelay);
 
     this.idleTimers.set(chatId, timer);
   }
 
   sendIdlePrompt(chatId, session) {
+    // Don't send idle prompt if session is about to end
+    if (session.messageCount >= this.MAX_MESSAGES_PER_SESSION - 1 || session.ended) {
+      return;
+    }
+
     const userSocketId = this.botChatMap.get(chatId);
     if (!userSocketId) return;
 
@@ -285,6 +375,17 @@ Don't give long answers — just one or two lines max.
     );
 
     console.log(`[IDLE] ${session.displayName}: ${msg}`);
+    session.messageCount++;
+
+    // Check if this idle message reaches the limit
+    if (session.messageCount >= this.MAX_MESSAGES_PER_SESSION) {
+      setTimeout(() => {
+        this.sendGoodbyeAndEndSession(chatId, session);
+      }, 2000);
+    } else {
+      // Restart idle timer after sending prompt
+      this.startIdleTimer(chatId, session);
+    }
   }
 
   endSession(chatId) {
@@ -294,6 +395,9 @@ Don't give long answers — just one or two lines max.
       clearTimeout(this.idleTimers.get(chatId));
       this.idleTimers.delete(chatId);
     }
+    this.io.to(chatId).emit("leftChatRoomMessage", "User left the chat");
+    
+    console.log(`[SESSION ENDED] Chat ${chatId} cleaned up`);
   }
 
   isBotChat(chatId) {
