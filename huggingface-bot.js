@@ -248,7 +248,7 @@ IMPORTANT: This conversation will end after a few more messages, so keep respons
         })),
         { role: "user", content: userMessage },
       ],
-      max_tokens: 10,
+      max_tokens: 15,
       temperature: 0.85,
       top_p: 0.9,
     };
