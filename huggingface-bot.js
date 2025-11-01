@@ -63,7 +63,7 @@ class HuggingFaceBot {
   createBotSession(chatId, virtualProfile, userSocketId) {
     const gender = virtualProfile.gender?.toLowerCase() || "female";
     const name = gender === "male" ? "Rahul" : "Myra";
-
+  this.MAX_MESSAGES_PER_SESSION = Math.floor(Math.random() * 6) + 15; // 15 to 20 messages
     const session = {
       botId: virtualProfile.id || `bot_${Math.random().toString(36).slice(2, 9)}`,
       displayName: name,
@@ -390,16 +390,17 @@ IMPORTANT: This conversation will end after a few more messages, so keep respons
   }
 
   endSession(chatId) {
-    this.botSessions.delete(chatId);
-    this.botChatMap.delete(chatId);
-    if (this.idleTimers.has(chatId)) {
-      clearTimeout(this.idleTimers.get(chatId));
-      this.idleTimers.delete(chatId);
-    }
-    this.io.to(chatId).emit("leftChatRoomMessage", "User left the chat");
-    
-    console.log(`[SESSION ENDED] Chat ${chatId} cleaned up`);
+  console.log(`[END SESSION TRIGGERED] ${chatId}`);
+  this.botSessions.delete(chatId);
+  this.botChatMap.delete(chatId);
+  if (this.idleTimers.has(chatId)) {
+    clearTimeout(this.idleTimers.get(chatId));
+    this.idleTimers.delete(chatId);
   }
+  this.io.to(chatId).emit("leftChatRoomMessage", "User left the chat");
+  console.log(`[SESSION ENDED] Chat ${chatId} cleaned up`);
+}
+
 
   isBotChat(chatId) {
     return this.botSessions.has(chatId);

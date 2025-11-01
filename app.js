@@ -11,11 +11,13 @@ const fs = require("fs");
 // or
 const { getMessaging } = require("firebase-admin/messaging"); // if using CommonJS
 
-// const serviceAccount = require("./serviceAccountKey.json");
-const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
+const serviceAccount = require("./serviceAccountKey.json");
+// const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
 let lastNotifyTime = 0;
 const MIN_FAKE = 100;
 const MAX_FAKE = 2000;
+const userChatMap = new Map();
+
 const urlRegex = /(?:https?|ftp):\/\/[^\s/$.?#].[^\s]*|www\.[^\s/$.?#].[^\s]*/i;
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -174,11 +176,6 @@ io.on("connection", (socket) => {
             isBot: true,
           })
         );
-        // const session = botModule.createBotSession(
-        //   chatId,
-        //   virtualProfile /* random profile */,
-        //   socket.id
-        // );
 
         // create bot session in separate module and map chat->socket
         botModule.createBotSession(
@@ -251,6 +248,7 @@ io.on("connection", (socket) => {
     const chatId = parsedData["chatId"];
     socket.join(chatId);
     console.log("ROOM >>> " + chatId);
+    userChatMap.set(socket.id, chatId);
     socket.broadcast
       .to(chatId)
       .emit("welcomeNote", "A random user joined the chat");
@@ -284,7 +282,6 @@ io.on("connection", (socket) => {
       botModule.handleUserMessage(chatId, parsedData);
       return;
     }
-   
 
     io.to(chatId).emit("message", data.toString());
     // if (botModule.isBotChat(chatId)) {
@@ -455,19 +452,34 @@ io.on("connection", (socket) => {
     io.to(chatId).emit("typingMessageOff", data.toString());
   });
 
-  socket.on("leftChatRoom", (data) => {
-    let parsedData;
-    try {
-      parsedData = typeof data === "string" ? JSON.parse(data) : data;
-      endSession;
-    } catch (e) {
-      socket.emit("error", "Invalid data format.");
-      return;
-    }
-    const chatId = parsedData["chatId"];
+ // ---------------- LEFT CHAT ROOM ----------------
+socket.on("leftChatRoom", (data) => {
+  let parsedData;
+  try {
+    parsedData = typeof data === "string" ? JSON.parse(data) : data;
+  } catch (e) {
+    socket.emit("error", "Invalid data format.");
+    return;
+  }
+
+  const chatId = parsedData?.chatId || userChatMap.get(socket.id);
+  if (!chatId) {
+    console.log("⚠️ No chatId found for leftChatRoom");
+    return;
+  }
+
+  console.log(`👋 User left chat ${chatId}`);
+
+  // ✅ Stop any active bot session
+  if (botModule.isBotChat(chatId)) {
+    console.log(`[BOT CLEANUP] Ending bot session for ${chatId}`);
     botModule.endSession(chatId);
-    io.to(chatId).emit("leftChatRoomMessage", "User left the chat");
-  });
+  }
+
+  io.to(chatId).emit("leftChatRoomMessage", "User left the chat");
+  userChatMap.delete(socket.id);
+});
+
   socket.on("getWaitingUsers", (data) => {
     broadcastUserCount();
   });
@@ -482,33 +494,40 @@ io.on("connection", (socket) => {
       return;
     }
     const chatId = parsedData["chatId"];
+    botModule.endSession(chatId);
     io.to(chatId).emit("closedApp", "User closed the app");
     broadcastUserCount();
   });
 
-  socket.on("disconnect", () => {
-    console.log("A user disconnected");
-    let removedId = null;
-    for (const [id, user] of waitingUsers) {
-      if (user.socketId === socket.id) {
-        waitingUsers.delete(id);
-        if (timers.has(id)) {
-          clearTimeout(timers.get(id));
-          timers.delete(id);
-        }
-        activeUsers.delete(id);
-        removedId = id;
-        botModule.endSession(chatId);
+ // ---------------- DISCONNECT ----------------
+socket.on("disconnect", () => {
+  console.log("⚠️ Socket disconnected:", socket.id);
 
-        console.log(`[DISCONNECT] User ${id} removed from queue.`);
-        broadcastUserCount();
-        break;
+  const chatId = userChatMap.get(socket.id);
+  if (chatId) {
+    if (botModule.isBotChat(chatId)) {
+      console.log(`[BOT DISCONNECT] Ending bot session for ${chatId}`);
+      botModule.endSession(chatId);
+    }
+    userChatMap.delete(socket.id);
+  }
+
+  // Clean up waiting users (real humans)
+  for (const [id, user] of waitingUsers) {
+    if (user.socketId === socket.id) {
+      waitingUsers.delete(id);
+      if (timers.has(id)) {
+        clearTimeout(timers.get(id));
+        timers.delete(id);
       }
+      activeUsers.delete(id);
+      console.log(`[DISCONNECT] User ${id} removed from queue.`);
+      broadcastUserCount();
+      break;
     }
-    if (removedId) {
-      activeUsers.delete(removedId);
-    }
-  });
+  }
+});
+
 });
 // Add this method to your HuggingFaceBot class
 
