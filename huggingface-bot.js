@@ -1,5 +1,4 @@
 // huggingface-bot.js
-const fetch = require("node-fetch");
 require("dotenv").config();
 
 class HuggingFaceBot {
@@ -63,7 +62,7 @@ class HuggingFaceBot {
   createBotSession(chatId, virtualProfile, userSocketId) {
     const gender = virtualProfile.gender?.toLowerCase() || "female";
     const name = gender === "male" ? "Rahul" : "Myra";
-    this.MAX_MESSAGES_PER_SESSION = Math.floor(Math.random() * 6) + 15; // 15 to 20 messages
+  this.MAX_MESSAGES_PER_SESSION = Math.floor(Math.random() * 6) + 15; // 15 to 20 messages
     const session = {
       botId: virtualProfile.id || `bot_${Math.random().toString(36).slice(2, 9)}`,
       displayName: name,
