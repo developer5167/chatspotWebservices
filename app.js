@@ -6,13 +6,11 @@ const app = express();
 const admin = require("firebase-admin");
 const path = require("path");
 const fs = require("fs");
-// const botModule = require("./chroma-db-disabled");
-
 // or
 const { getMessaging } = require("firebase-admin/messaging"); // if using CommonJS
 
-// const serviceAccount = require("./serviceAccountKey.json");
-const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
+const serviceAccount = require("./serviceAccountKey.json");
+// const serviceAccount = require("/home/bitnami/config/serviceAccountKey.json");
 let lastNotifyTime = 0;
 const MIN_FAKE = 100;
 const MAX_FAKE = 2000;
@@ -39,32 +37,14 @@ const io = new Server(server, {
     credentials: false,
   },
 });
-const HuggingFaceBot = require("./huggingface-bot");
-const botModule = new HuggingFaceBot(io);
+
+
 
 const waitingUsers = new Map();
-let virtualUsers = [];
 
 const timers = new Map();
 const activeUsers = new Set();
 const deviceTokens = new Set(); // Add this at the top, after your other variables
-
-const VIRTUAL_USERS_PATH = path.join(__dirname, "virtual_users.json");
-
-try {
-  if (fs.existsSync(VIRTUAL_USERS_PATH)) {
-    const data = fs.readFileSync(VIRTUAL_USERS_PATH, "utf8");
-    virtualUsers = JSON.parse(data);
-    console.log(`Loaded ${virtualUsers.length} virtual users`);
-  } else {
-    console.log(
-      "virtual_users.json not found — virtualUsers is empty for now."
-    );
-  }
-} catch (err) {
-  console.error("Error loading virtual_users.json:", err);
-  virtualUsers = [];
-}
 
 app.get("/", (req, res) => {
   res.send("Welcome");
@@ -146,59 +126,13 @@ io.on("connection", (socket) => {
         console.log(
           `[TIMEOUT] No real match for ${id}. Trying virtual user...`
         );
-
-        // choose a virtual user profile (implement or reuse your existing pool)
-        // Example simple virtual selection:
-        const virtualProfile =
-          virtualUsers && virtualUsers.length
-            ? virtualUsers[Math.floor(Math.random() * virtualUsers.length)]
-            : {
-                id: `bot_${Math.random().toString(36).slice(2, 8)}`,
-                name: "Riya",
-                displayName: "Riya",
-                persona: "friendly",
-                city: "Bengaluru",
-              };
-
-        // create server-generated chatId for bot session (must be sent to client)
-        const chatId = `chat_${Date.now()}_${Math.random()
-          .toString(36)
-          .slice(2, 6)}`;
-
-        // emit pair event to user with isBot true and chatId
-        io.to(socket.id).emit(
-          "pair",
-          JSON.stringify({
-            id: virtualProfile.id || virtualProfile.name,
-            gender: virtualProfile.gender || "Any",
-            name: virtualProfile.displayName || virtualProfile.name,
-            chatId,
-            isBot: true,
-          })
-        );
-
-        // create bot session in separate module and map chat->socket
-        botModule.createBotSession(
-          chatId,
-          {
-            id: virtualProfile.id || virtualProfile.name,
-            displayName: virtualProfile.displayName || virtualProfile.name,
-            persona: virtualProfile.persona,
-            city: virtualProfile.city,
-            profession: virtualProfile.profession,
-            hobby: virtualProfile.hobby,
-          },
-          socket.id
-        );
-
-        // cleanup waiting queue for this user
         waitingUsers.delete(id);
         timers.delete(id);
         activeUsers.delete(id);
         broadcastUserCount();
         return;
       }
-    }, 30000);
+    }, 5000);
 
     timers.set(id, countdown);
     broadcastUserCount();
@@ -245,14 +179,12 @@ io.on("connection", (socket) => {
       socket.emit("error", "Invalid data format.");
       return;
     }
-    const chatId = parsedData["chatId"];
-    socket.join(chatId);
-    console.log("ROOM >>> " + chatId);
-    userChatMap.set(socket.id, chatId);
-    socket.broadcast
-      .to(chatId)
-      .emit("welcomeNote", "A random user joined the chat");
-  });
+      const chatId = parsedData["chatId"];
+      socket.join(chatId);
+      console.log("ROOM >>> " + chatId);
+      userChatMap.set(socket.id, chatId);
+      socket.broadcast.to(chatId).emit("welcomeNote", "A random user joined the chat");
+    });
 
   socket.on("sendMessage", (data) => {
     let parsedData;
@@ -269,25 +201,8 @@ io.on("connection", (socket) => {
       io.to(chatId).emit("welcomeNote", `Message blocked: Contains a URL.`);
       return;
     }
-    if (botModule.isBotChat && botModule.isBotChat(chatId)) {
-      // still emit the user's message back to the client (so it appears in UI)
-      const userSocketId =
-        botModule && botModule.botChatMap
-          ? botModule.botChatMap.get(chatId)
-          : null;
-      // simply emit to the room/user so the UI sees the message (existing behavior)
-      io.to(chatId).emit("message", data.toString()); // or emit to socket.id if needed
-
-      // let botModule handle reply generation and emission
-      botModule.handleUserMessage(chatId, parsedData);
-      return;
-    }
-
+    console.log("INCOMING chatId:", chatId);
     io.to(chatId).emit("message", data.toString());
-    // if (botModule.isBotChat(chatId)) {
-    //   botModule.handleUserMessage(chatId, { message: text });
-    //   return;
-    // }
   });
   socket.on("offer", (data) => {
     let parsedData;
@@ -470,11 +385,6 @@ socket.on("leftChatRoom", (data) => {
 
   console.log(`👋 User left chat ${chatId}`);
 
-  // ✅ Stop any active bot session
-  if (botModule.isBotChat(chatId)) {
-    console.log(`[BOT CLEANUP] Ending bot session for ${chatId}`);
-    botModule.endSession(chatId);
-  }
 
   io.to(chatId).emit("leftChatRoomMessage", "User left the chat");
   userChatMap.delete(socket.id);
@@ -494,7 +404,6 @@ socket.on("leftChatRoom", (data) => {
       return;
     }
     const chatId = parsedData["chatId"];
-    botModule.endSession(chatId);
     io.to(chatId).emit("closedApp", "User closed the app");
     broadcastUserCount();
   });
@@ -505,10 +414,6 @@ socket.on("disconnect", () => {
 
   const chatId = userChatMap.get(socket.id);
   if (chatId) {
-    if (botModule.isBotChat(chatId)) {
-      console.log(`[BOT DISCONNECT] Ending bot session for ${chatId}`);
-      botModule.endSession(chatId);
-    }
     userChatMap.delete(socket.id);
   }
 
